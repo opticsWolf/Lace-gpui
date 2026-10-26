@@ -12,7 +12,7 @@ cycle them live.
 
 ```toml
 [dependencies]
-lace-gpui = { version = "0.9.7", features = ["gpui-kit"] }
+lace-gpui = { version = "0.0.2", features = ["gpui-kit"] }
 ```
 
 ## Layout

@@ -1,6 +1,6 @@
 [package]
 name = "lace-gpui"
-version = "0.9.7"
+version = "0.0.2"
 edition = "2021"
 license = "Apache-2.0"
 description = "Lace's OKLCH theming engine, ported to gpui-kit: 16 curated themes, a zero-dependency colour core, and a bridge onto gpui_kit::ThemeColor."

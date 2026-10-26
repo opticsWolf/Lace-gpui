@@ -823,7 +823,7 @@ impl WidgetsApp {
                     .child(format!("theme: {}", self.theme_name))
                     .child(format!("mode: {}", if is_light { "light" } else { "dark" }))
                     .child(format!("{} presets \u{00B7} 78 tokens", themes::ALL.len()))
-                    .child("lace-gpui 0.9.7"),
+                    .child(concat!("lace-gpui ", env!("CARGO_PKG_VERSION"))),
             )
     }
 

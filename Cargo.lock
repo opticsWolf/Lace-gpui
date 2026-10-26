@@ -3362,7 +3362,7 @@ dependencies = [
 
 [[package]]
 name = "lace-gpui"
-version = "0.9.7"
+version = "0.0.2"
 dependencies = [
  "gpui-kit",
 ]
