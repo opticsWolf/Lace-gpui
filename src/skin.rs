@@ -234,7 +234,7 @@ pub enum WidgetStyle {
     Theme,
     /// The palette plus [`BaseStyle`](crate::base_style::BaseStyle):
     /// LaceStyle's flat outlines, state steps, focus ring, scrollbar and
-    /// slider mixes.
+    /// slider mixes, plus a shallow gradient depth pass.
     LaceBase,
 }
 
@@ -289,7 +289,7 @@ pub fn apply_spec_styled(spec: &ThemeSpec, style: WidgetStyle, cx: &mut App) {
         let theme = Theme::global_mut(cx);
         apply_tokens(theme, &tokens);
         if style == WidgetStyle::LaceBase {
-            crate::base_style::BaseStyle::from_spec(spec, &tokens).apply(theme);
+            crate::base_style::BaseStyle::from_spec(spec, &tokens).apply(theme, &tokens);
         } else {
             // LaceStyle gates the ring on focus_width; gpui-kit's stock
             // default is on.

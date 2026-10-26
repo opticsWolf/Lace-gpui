@@ -9,12 +9,19 @@
 //! for some of those rules and not others; this module derives LaceStyle's
 //! values from a [`Tokens`] and writes the ones gpui-kit can name.
 //!
+//! LaceStyle itself is flat. [`BaseStyle::apply`] adds a shallow depth pass on
+//! top: gpui-kit tokens carry a renderable `Background`, so faces, tabs,
+//! headers and thumbs can take a small vertical sheen, progress can sweep
+//! horizontally, and saturated accent faces only shade away from their label.
+//! The gallery adds soft app-side shadows and accent glows where the theme
+//! surface has no shadow slot.
+//!
 //! The derivation is pure — [`BaseStyle::from_tokens`] and
 //! [`BaseStyle::from_spec`] need no gpui context. [`BaseStyle::apply`] is the
 //! write half used by [`crate::skin::apply_styled`].
 
 use gpui_kit::component::theme::{Theme, ThemeTokens};
-use gpui_kit::gpui::px;
+use gpui_kit::gpui::{linear_color_stop, linear_gradient, px, Background};
 
 use crate::color::{self, Rgba};
 use crate::contrast::{contrast_target, Role};
@@ -54,6 +61,39 @@ const POPUP_RADIUS_BLEND: f32 = 1.0 / 3.0;
 /// `_BASIC_CLASSIC_OUTLINE`: at or below this strength the classic chassis
 /// holds its outlines to the low border floor (1.15:1).
 pub const CLASSIC_OUTLINE_STRENGTH: f64 = 0.1;
+
+// ---------------------------------------------------------------------------
+// Depth
+// ---------------------------------------------------------------------------
+// LaceStyle itself is flat. The base layer adds a barely-there vertical sheen
+// so large controls read as objects rather than fills, and so the palette's
+// surfaces keep some depth on a dark ground. The steps are deliberately small:
+// at 8-bit sRGB, 0.01 of OKLCH L is only a few channel values.
+
+/// Lightness lift at the top of a raised neutral face.
+pub const FACE_LIFT: f64 = 0.010;
+/// Lightness shade at the bottom of a raised neutral face.
+pub const FACE_SHADE: f64 = 0.014;
+/// Lightness lift at the top of a saturated accent face.
+pub const ACCENT_LIFT: f64 = 0.008;
+/// Lightness shade at the bottom of a saturated accent face.
+pub const ACCENT_SHADE: f64 = 0.010;
+/// Inset faces invert the sheen: the top is the shaded end.
+pub const INSET_TOP: f64 = 0.006;
+/// Inset faces lift the bottom end.
+pub const INSET_BOTTOM: f64 = 0.006;
+/// Header and tab surfaces carry a flatter sheen than controls.
+pub const HEADER_LIFT: f64 = 0.006;
+/// Bottom shade of a header or tab surface.
+pub const HEADER_SHADE: f64 = 0.005;
+/// Canvas and panel surfaces get the quietest sheen of all.
+pub const SURFACE_LIFT: f64 = 0.004;
+/// Bottom shade of a canvas or panel surface.
+pub const SURFACE_SHADE: f64 = 0.006;
+/// Scrollbar and slider thumbs get a rounder, stronger highlight.
+pub const THUMB_LIFT: f64 = 0.014;
+/// Bottom shade of a thumb.
+pub const THUMB_SHADE: f64 = 0.014;
 
 /// LaceStyle's widget-level rules, derived from one [`Tokens`] palette.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -109,6 +149,53 @@ pub struct BaseStyle {
     pub scrollbar_thumb_hover: Rgba,
     /// Slider handle face: the button face, as LaceStyle draws it.
     pub slider_thumb: Rgba,
+}
+
+/// A top-to-bottom linear gradient between two opaque colours.
+fn vertical(top: Rgba, bottom: Rgba) -> Background {
+    linear_gradient(
+        180.0,
+        linear_color_stop(hsla(top), 0.0),
+        linear_color_stop(hsla(bottom), 1.0),
+    )
+}
+
+/// A left-to-right sweep, for progress fills.
+fn sweep(left: Rgba, right: Rgba) -> Background {
+    linear_gradient(
+        90.0,
+        linear_color_stop(hsla(left), 0.0),
+        linear_color_stop(hsla(right), 1.0),
+    )
+}
+
+/// A raised face: a light top edge, a slightly deeper bottom.
+fn raised(fill: Rgba, lift: f64, shade: f64) -> Background {
+    vertical(color::step(fill, lift), color::step(fill, -shade))
+}
+
+/// A pressed face: the sheen inverted, so the top reads as recessed.
+fn inset(fill: Rgba, lift: f64, shade: f64) -> Background {
+    vertical(color::step(fill, -lift), color::step(fill, shade))
+}
+
+/// The two stops of a saturated face, ordered top to bottom.
+///
+/// White-labelled accents keep their enforced face at the top and shade
+/// downward; dark-labelled accents lift the top and keep the enforced face at
+/// the bottom. This keeps both stops at least as readable as the base face.
+fn accent_stops(fill: Rgba, lift: f64, shade: f64) -> (Rgba, Rgba) {
+    if color::contrast_ratio(color::WHITE, fill) >= color::contrast_ratio(color::BLACK, fill) {
+        (fill, color::step(fill, -shade))
+    } else {
+        (color::step(fill, lift), fill)
+    }
+}
+
+/// A saturated face whose gradient stays on the safe side of its label.
+fn accent_face(fill: Rgba, lift: f64, shade: f64) -> Background {
+    let (top, bottom) = accent_stops(fill, lift, shade);
+    vertical(top, bottom)
 }
 
 impl BaseStyle {
@@ -201,9 +288,11 @@ impl BaseStyle {
 
     /// Write the rules gpui-kit can represent onto `theme`.
     ///
-    /// The caller must rebuild gpui-kit's derived `ThemeTokens` and sync the
-    /// base layer; [`crate::skin::apply_spec_styled`] does both.
-    pub fn apply(&self, theme: &mut Theme) {
+    /// `source` is the palette the base layer was derived from; it supplies
+    /// the surfaces that get a quiet sheen. The caller must rebuild the base
+    /// layer and refresh windows; [`crate::skin::apply_spec_styled`] does
+    /// both.
+    pub fn apply(&self, theme: &mut Theme, source: &Tokens) {
         theme.colors.input = if self.field_outline {
             hsla(self.field_outline_color)
         } else {
@@ -222,7 +311,8 @@ impl BaseStyle {
         theme.colors.slider_thumb = hsla(self.slider_thumb);
 
         // LaceStyle steps every button face by lightness, not by the theme's
-        // hover surfaces: +0.04 on hover, +0.08 pressed.
+        // hover surfaces: +0.04 on hover, +0.08 pressed. Status buttons
+        // follow the same rule.
         theme.colors.button_hover = hsla(self.button_hover);
         theme.colors.button_active = hsla(self.button_active);
         theme.colors.button_secondary_hover = hsla(self.button_hover);
@@ -233,6 +323,31 @@ impl BaseStyle {
         theme.colors.button_primary_active = hsla(self.accent_active);
         theme.colors.primary_hover = hsla(self.accent_hover);
         theme.colors.primary_active = hsla(self.accent_active);
+        for (base, hover, active) in [
+            (
+                source.error,
+                &mut theme.colors.button_danger_hover,
+                &mut theme.colors.button_danger_active,
+            ),
+            (
+                source.warning,
+                &mut theme.colors.button_warning_hover,
+                &mut theme.colors.button_warning_active,
+            ),
+            (
+                source.success,
+                &mut theme.colors.button_success_hover,
+                &mut theme.colors.button_success_active,
+            ),
+            (
+                source.info,
+                &mut theme.colors.button_info_hover,
+                &mut theme.colors.button_info_active,
+            ),
+        ] {
+            *hover = hsla(color::step_contrast(base, HOVER_STEP));
+            *active = hsla(color::step_contrast(base, PRESS_STEP));
+        }
 
         // A default button's border is ThemeColor::input, and an input's
         // border is the same field slot; the field outline wins because it
@@ -240,7 +355,111 @@ impl BaseStyle {
         theme.radius = px(self.control_radius);
         theme.radius_lg = px(self.corner_radius);
         theme.focus_ring = self.focus_width > 0.0;
+
+        // Solid tokens first, then the depth layer: every background below
+        // keeps its token's representative `color` for text and icons.
         theme.tokens = ThemeTokens::from(&theme.colors);
+        let tokens = &mut theme.tokens;
+
+        // Neutral button faces.
+        let face = raised(self.button, FACE_LIFT, FACE_SHADE);
+        tokens.button.background = face;
+        tokens.button_secondary.background = face;
+        tokens.secondary.background = raised(self.button, HEADER_LIFT, HEADER_SHADE);
+        let hover = raised(self.button_hover, FACE_LIFT, FACE_SHADE);
+        tokens.button_hover.background = hover;
+        tokens.button_secondary_hover.background = hover;
+        tokens.secondary_hover.background = raised(self.button_hover, HEADER_LIFT, HEADER_SHADE);
+        let active = inset(self.button_active, INSET_TOP, INSET_BOTTOM);
+        tokens.button_active.background = active;
+        tokens.button_secondary_active.background = active;
+        tokens.secondary_active.background = raised(self.button_active, HEADER_LIFT, HEADER_SHADE);
+
+        // Accent faces and the accent wash behind checkboxes, radios and
+        // switch tracks.
+        tokens.button_primary.background = accent_face(self.accent, ACCENT_LIFT, ACCENT_SHADE);
+        tokens.button_primary_hover.background =
+            accent_face(self.accent_hover, ACCENT_LIFT, ACCENT_SHADE);
+        tokens.button_primary_active.background =
+            accent_face(self.accent_active, ACCENT_LIFT, ACCENT_SHADE);
+        tokens.primary.background = accent_face(self.accent, ACCENT_LIFT * 0.5, ACCENT_SHADE * 0.5);
+        tokens.primary_hover.background =
+            accent_face(self.accent_hover, ACCENT_LIFT * 0.5, ACCENT_SHADE * 0.5);
+        tokens.primary_active.background =
+            accent_face(self.accent_active, ACCENT_LIFT * 0.5, ACCENT_SHADE * 0.5);
+        tokens.accent.background = accent_face(self.accent, ACCENT_LIFT * 0.5, ACCENT_SHADE * 0.5);
+
+        // Status buttons: same relief, same state steps.
+        for (base, normal, hover, active) in [
+            (
+                source.error,
+                &mut tokens.button_danger,
+                &mut tokens.button_danger_hover,
+                &mut tokens.button_danger_active,
+            ),
+            (
+                source.warning,
+                &mut tokens.button_warning,
+                &mut tokens.button_warning_hover,
+                &mut tokens.button_warning_active,
+            ),
+            (
+                source.success,
+                &mut tokens.button_success,
+                &mut tokens.button_success_hover,
+                &mut tokens.button_success_active,
+            ),
+            (
+                source.info,
+                &mut tokens.button_info,
+                &mut tokens.button_info_hover,
+                &mut tokens.button_info_active,
+            ),
+        ] {
+            let hover_colour = color::step_contrast(base, HOVER_STEP);
+            let active_colour = color::step_contrast(base, PRESS_STEP);
+            normal.color = hsla(base);
+            hover.color = hsla(hover_colour);
+            active.color = hsla(active_colour);
+            normal.background = accent_face(base, ACCENT_LIFT, ACCENT_SHADE);
+            hover.background = accent_face(hover_colour, ACCENT_LIFT, ACCENT_SHADE);
+            active.background = accent_face(active_colour, ACCENT_LIFT, ACCENT_SHADE);
+        }
+
+        // A cool-to-bright sweep along a progress fill.
+        tokens.progress_bar.background = sweep(self.accent, source.accent_bright);
+
+        // Thumbs get a little more roundness than a face.
+        tokens.scrollbar_thumb.background = raised(self.scrollbar_thumb, THUMB_LIFT, THUMB_SHADE);
+        tokens.scrollbar_thumb_hover.background =
+            raised(self.scrollbar_thumb_hover, THUMB_LIFT, THUMB_SHADE);
+        tokens.slider_thumb.background = raised(self.slider_thumb, THUMB_LIFT, THUMB_SHADE);
+        tokens.switch_thumb.background = raised(self.slider_thumb, THUMB_LIFT, THUMB_SHADE);
+
+        // Header, tab and table-head surfaces: a flatter sheen than controls.
+        let header = raised(source.tab_bg_normal, HEADER_LIFT, HEADER_SHADE);
+        tokens.tab_bar.background = header;
+        tokens.tab_bar_segmented.background = header;
+        tokens.tab.background = header;
+        tokens.title_bar.background = header;
+        tokens.table_head.background = header;
+        tokens.list_head.background = header;
+        tokens.description_list_label.background = header;
+        tokens.table_foot.background = header;
+        tokens.tab_active.background = raised(source.tab_bg_active, HEADER_LIFT, HEADER_SHADE);
+        tokens.status_bar.background = raised(source.panel_bg, HEADER_LIFT, HEADER_SHADE);
+
+        // Quiet large surfaces. The background gradient is what gives the
+        // window its atmosphere; panels and cards sit on it with their own.
+        tokens.background.background = raised(source.canvas_bg, SURFACE_LIFT, SURFACE_SHADE);
+        tokens.sidebar.background = raised(source.sidebar_bg, SURFACE_LIFT, SURFACE_SHADE);
+        tokens.sidebar_primary.background = raised(source.panel_bg, SURFACE_LIFT, SURFACE_SHADE);
+        let panel = raised(source.panel_bg, SURFACE_LIFT, SURFACE_SHADE);
+        tokens.list.background = panel;
+        tokens.table.background = panel;
+        tokens.accordion.background = panel;
+        tokens.group_box.background = panel;
+        tokens.popover.background = raised(source.tooltip_bg, HEADER_LIFT, HEADER_SHADE);
     }
 }
 
@@ -310,6 +529,25 @@ mod tests {
     }
 
     #[test]
+    fn accent_gradients_never_weaken_their_foreground() {
+        for name in ["midnight", "cream", "dracula", "cyberpunk_neon"] {
+            let t = crate::build(spec(name));
+            for base in [t.accent_color, t.warning, t.error, t.success, t.info] {
+                let fg = color::on_color(base, [color::WHITE, color::BLACK], 4.5);
+                let (top, bottom) = accent_stops(base, ACCENT_LIFT, ACCENT_SHADE);
+                let base_ratio = color::contrast_ratio(fg, base);
+                for (end, colour) in [("top", top), ("bottom", bottom)] {
+                    let ratio = color::contrast_ratio(fg, colour);
+                    assert!(
+                        ratio + 1e-6 >= base_ratio,
+                        "{name}: {end} end {ratio} < base {base_ratio} on {base:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn popup_radius_bridges_control_and_card() {
         let b = BaseStyle::from_tokens(&crate::build(spec("cyberpunk_neon")));
         assert_eq!(b.control_radius, 4.0);
@@ -329,10 +567,9 @@ mod tests {
             theme.colors.scrollbar_thumb,
         );
 
-        BaseStyle::from_spec(s, &tokens).apply(&mut theme);
+        BaseStyle::from_spec(s, &tokens).apply(&mut theme, &tokens);
         assert_ne!(theme.colors.button_hover, stock.1);
         assert_ne!(theme.colors.scrollbar_thumb, stock.2);
-        assert_eq!(theme.tokens, ThemeTokens::from(&theme.colors));
 
         crate::skin::apply_tokens(&mut theme, &tokens);
         assert_eq!(
@@ -343,5 +580,36 @@ mod tests {
             ),
             stock
         );
+        assert!(theme.tokens.button.background.as_solid().is_some());
+    }
+
+    #[test]
+    fn base_apply_lays_surface_gradients() {
+        let s = spec("midnight");
+        let tokens = crate::build(s);
+        let mut theme = Theme::default();
+        crate::skin::apply_tokens(&mut theme, &tokens);
+        BaseStyle::from_spec(s, &tokens).apply(&mut theme, &tokens);
+
+        for (name, background) in [
+            ("button", theme.tokens.button.background),
+            ("button primary", theme.tokens.button_primary.background),
+            ("scrollbar thumb", theme.tokens.scrollbar_thumb.background),
+            ("slider thumb", theme.tokens.slider_thumb.background),
+            ("tab bar", theme.tokens.tab_bar.background),
+            ("table head", theme.tokens.table_head.background),
+            ("progress", theme.tokens.progress_bar.background),
+            ("window", theme.tokens.background.background),
+        ] {
+            assert!(
+                background.as_solid().is_none(),
+                "{name} should be a gradient: {background:?}"
+            );
+        }
+
+        // The gradient stops are deliberately different, so the face reads
+        // as lit from above rather than as a flat fill.
+        let debug = format!("{:?}", theme.tokens.button.background);
+        assert!(debug.contains("LinearGradient"), "{debug}");
     }
 }

@@ -65,6 +65,7 @@ use gpui_kit::component::{
     tag::Tag,
     ActiveTheme, Disableable, Icon, IconName, IndexPath, Sizable, WindowExt,
 };
+use gpui_kit::gpui::{black, BoxShadow, Hsla, Pixels};
 use gpui_kit::*;
 
 use lace_gpui::{
@@ -115,16 +116,21 @@ fn col() -> Div {
 /// The shared card surface for a component group.
 fn card(cx: &App) -> Div {
     let theme = cx.theme();
+    let shadow = if theme.is_dark() { 0.20 } else { 0.06 };
     div()
         .flex()
         .flex_col()
         .gap_4()
         .min_w_0()
         .p_5()
-        .bg(theme.colors.list)
+        .bg(theme.tokens.list)
         .border_1()
         .border_color(theme.colors.border)
         .rounded(theme.radius_lg)
+        .shadow(vec![
+            BoxShadow::new(px(0.), px(1.), black().opacity(shadow * 0.6)).blur_radius(px(2.)),
+            BoxShadow::new(px(0.), px(8.), black().opacity(shadow)).blur_radius(px(24.)),
+        ])
 }
 
 fn card_header(title: &'static str, description: &'static str, cx: &App) -> Div {
@@ -143,6 +149,17 @@ fn card_header(title: &'static str, description: &'static str, cx: &App) -> Div 
                 .text_color(theme.muted_foreground)
                 .child(description),
         )
+}
+
+/// A soft accent halo around a primary action. The wrapper has the button's
+/// bounds, so the shadow lands outside it without changing the layout.
+fn action_glow(color: Hsla, radius: Pixels, button: impl IntoElement) -> Div {
+    div()
+        .rounded(radius)
+        .shadow(vec![
+            BoxShadow::new(px(0.), px(2.), color.opacity(0.28)).blur_radius(px(14.))
+        ])
+        .child(button)
 }
 
 /// A label + description on the left, a control on the right.
@@ -433,7 +450,7 @@ impl WidgetsApp {
     // -- header ------------------------------------------------------------
 
     fn header(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let background = cx.theme().title_bar;
+        let background = cx.theme().tokens.title_bar;
         let border = cx.theme().title_bar_border;
         let muted = cx.theme().muted_foreground;
         let primary = cx.theme().primary;
@@ -456,6 +473,12 @@ impl WidgetsApp {
             .bg(background)
             .border_b_1()
             .border_color(border)
+            .shadow(vec![BoxShadow::new(
+                px(0.),
+                px(2.),
+                black().opacity(if is_dark { 0.30 } else { 0.06 }),
+            )
+            .blur_radius(px(10.))])
             .child(
                 row()
                     .gap_3()
@@ -566,7 +589,9 @@ impl WidgetsApp {
                                 this.set_widget_style(WidgetStyle::LaceBase, cx);
                             }))
                     })
-                    .child(
+                    .child(action_glow(
+                        primary,
+                        radius,
                         Button::new("header-new")
                             .label("New item")
                             .primary()
@@ -574,7 +599,7 @@ impl WidgetsApp {
                             .on_click(cx.listener(|_, _, window, cx| {
                                 open_create_dialog(window, cx);
                             })),
-                    )
+                    ))
                     .child(
                         Button::new("header-about")
                             .icon(IconName::Info)
@@ -611,32 +636,42 @@ impl WidgetsApp {
         icon: IconName,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        ListItem::new(("nav", index))
-            .selected(self.page == index)
+        let selected = self.page == index;
+        let primary = cx.theme().primary;
+        let item = ListItem::new(("nav", index))
+            .selected(selected)
             .py(px(7.))
             .on_click(cx.listener(move |this, _, _, cx| {
                 if this.page != index {
                     this.page = index;
                     cx.notify();
                 }
-            }))
-            .child(
-                row()
-                    .gap_3()
-                    .child(Icon::new(icon).small())
-                    .child(div().text_size(px(13.)).child(label)),
-            )
+            }));
+        let item = if selected {
+            item.shadow(vec![
+                BoxShadow::new(px(0.), px(3.), primary.opacity(0.22)).blur_radius(px(12.))
+            ])
+        } else {
+            item
+        };
+        item.child(
+            row()
+                .gap_3()
+                .child(Icon::new(icon).small())
+                .child(div().text_size(px(13.)).child(label)),
+        )
     }
 
     fn sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let background = cx.theme().sidebar;
+        let background = cx.theme().tokens.sidebar;
         let border = cx.theme().sidebar_border;
         let muted = cx.theme().muted_foreground;
         let foreground = cx.theme().foreground;
         let primary = cx.theme().primary;
         let radius = cx.theme().radius;
-        let card_bg = cx.theme().colors.list;
+        let card_bg = cx.theme().tokens.list;
         let card_border = cx.theme().border;
+        let is_dark = cx.theme().is_dark();
 
         div()
             .w(px(240.))
@@ -649,6 +684,12 @@ impl WidgetsApp {
             .bg(background)
             .border_r_1()
             .border_color(border)
+            .shadow(vec![BoxShadow::new(
+                px(6.),
+                px(0.),
+                black().opacity(if is_dark { 0.22 } else { 0.05 }),
+            )
+            .blur_radius(px(18.))])
             .child(
                 Input::new(&self.search)
                     .prefix(Icon::new(IconName::Search).small().text_color(muted))
@@ -683,6 +724,12 @@ impl WidgetsApp {
                     .border_1()
                     .border_color(card_border)
                     .rounded(radius)
+                    .shadow(vec![BoxShadow::new(
+                        px(0.),
+                        px(4.),
+                        black().opacity(if is_dark { 0.18 } else { 0.04 }),
+                    )
+                    .blur_radius(px(14.))])
                     .child(
                         row()
                             .gap_2()
@@ -751,6 +798,8 @@ impl WidgetsApp {
         let theme = cx.theme();
         let muted = theme.muted_foreground;
         let border = theme.border;
+        let primary = theme.primary;
+        let radius = theme.radius;
         let (title, description, _) = NAV[self.page];
 
         div()
@@ -791,7 +840,9 @@ impl WidgetsApp {
                                 open_about(window, cx);
                             })),
                     )
-                    .child(
+                    .child(action_glow(
+                        primary,
+                        radius,
                         Button::new("header-create-2")
                             .label("Create")
                             .primary()
@@ -799,19 +850,17 @@ impl WidgetsApp {
                             .on_click(cx.listener(|_, _, window, cx| {
                                 open_create_dialog(window, cx);
                             })),
-                    ),
+                    )),
             )
     }
 
     fn content(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let background = cx.theme().background;
         div()
             .flex_1()
             .min_w_0()
             .h_full()
             .flex()
             .flex_col()
-            .bg(background)
             .child(self.content_header(cx))
             .child(
                 div()
@@ -826,7 +875,7 @@ impl WidgetsApp {
 
     fn status_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
-        let background = theme.status_bar;
+        let background = theme.tokens.status_bar;
         let border = theme.status_bar_border;
         let muted = theme.muted_foreground;
         let success = theme.success;
@@ -1185,6 +1234,8 @@ impl WidgetsApp {
 
     fn forms_page(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let muted = cx.theme().muted_foreground;
+        let primary = cx.theme().primary;
+        let radius = cx.theme().radius;
 
         div()
             .flex()
@@ -1285,7 +1336,9 @@ impl WidgetsApp {
                                                 cx.notify();
                                             })),
                                     )
-                                    .child(
+                                    .child(action_glow(
+                                        primary,
+                                        radius,
                                         Button::new("form-save")
                                             .label("Save changes")
                                             .primary()
@@ -1298,7 +1351,7 @@ impl WidgetsApp {
                                                     cx,
                                                 );
                                             })),
-                                    ),
+                                    )),
                             ),
                     ),
             )
@@ -2161,7 +2214,7 @@ impl WidgetsApp {
 impl Render for WidgetsApp {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
-        let background = theme.background;
+        let background = theme.tokens.background;
         let foreground = theme.foreground;
 
         div()

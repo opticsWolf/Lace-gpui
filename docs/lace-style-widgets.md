@@ -33,7 +33,8 @@ skin::apply_styled("midnight", WidgetStyle::Theme, cx);
 | LaceStyle rule | Source | gpui-kit mapping |
 |---|---|---|
 | `control_radius` / `corner_radius` | `LaceStyle.set_tokens`, fed by `DockStyleCategory.CORE` | `Theme.radius` / `Theme.radius_lg` |
-| Button face, `+0.04` hover, `+0.08` pressed, toward contrast | `_paint.HOVER_STEP`, `_paint.PRESS_STEP`, `_buttons.face_colors` | `button_hover`, `button_active`, `button_primary_hover/active`, `primary_hover/active`, `button_secondary_*`, `secondary_hover/active` |
+| Button face, `+0.04` hover, `+0.08` pressed, toward contrast, for every variant | `_paint.HOVER_STEP`, `_paint.PRESS_STEP`, `_buttons.face_colors` | `button_hover`, `button_active`, the primary/secondary pairs, and every status button pair; the depth pass adds the face sheen |
+| Progress fill: accent, rounded ends | `_range.progress_contents` | `progress_bar` (accent-to-`accent_bright` sweep) |
 | Button outline: text mixed over the button face at `outline_strength`, lifted to the border floor | `_paint.stroke`, `_paint.legible`, `_buttons.face_colors` | `ThemeColor::input` (see below) |
 | Field outline: text mixed over the field fill at `outline_strength`, lifted to the border floor | `_inputs.field_outline` | `ThemeColor::input` |
 | Classic chassis holds outlines to `1.15:1`; everything else to the theme's border floor | `_BASIC_CLASSIC` sets `outline_contrast="low"` | `BaseStyle::border_ratio` (inferred from `outline_strength <= 0.1`) |
@@ -47,6 +48,43 @@ skin::apply_styled("midnight", WidgetStyle::Theme, cx);
 `BaseStyle::from_tokens` derives everything from a built `Tokens`.
 `BaseStyle::from_spec` uses the spec's real contrast level; `from_tokens`
 assumes `normal`, which is true of all sixteen curated presets.
+
+## Depth on top of LaceStyle
+
+LaceStyle itself is flat. The Lace demo gets depth from the surrounding Qt and
+dock chrome — tonal surfaces, soft popup shadows and the sidebar tab's hover
+gradient.
+gpui-kit's `ThemeToken` keeps a solid representative colour plus a renderable
+`Background`, and `Background` accepts a linear gradient, so `BaseStyle::apply`
+can add a shallow relief without touching the solid colours components read
+for text and icons:
+
+| Surface | Gradient |
+|---|---|
+| Neutral button faces | top `+0.010` L, bottom `-0.014` L |
+| Pressed neutral faces | inset: top `-0.006` L, bottom `+0.006` L |
+| Accent and status faces | text-aware: a white-labelled face keeps its enforced colour at the top and shades down; a dark-labelled face lifts the top and keeps its enforced colour at the bottom |
+| Tabs, table/list heads, title and status bars | top `+0.006` L, bottom `-0.005` L |
+| Canvas, sidebar, panels, cards | top `+0.004` L, bottom `-0.006` L |
+| Scrollbar and slider thumbs | top `+0.014` L, bottom `-0.014` L |
+| Progress fill | left accent → right `accent_bright` |
+
+The accent direction is chosen per face from the contrast of white versus
+black. Both gradient stops are therefore at least as readable as the flat,
+contrast-checked accent: white-labelled accents only darken away from the
+top, and dark-labelled accents only lighten above the bottom.
+
+The theme surface has no shadow or blur slot. The gallery draws its own
+app-side effects where they matter:
+
+- cards, the header, the sidebar and the sidebar footer card carry a soft
+  black shadow scaled for dark and light modes;
+- primary actions (`New item`, `Create`, `Save changes`) get a low-alpha
+  accent halo;
+- the selected sidebar row gets a softer accent glow.
+
+These effects use `BoxShadow` in `examples/widgets.rs`; they are presentation,
+not tokens, so an application can vary them independently of the palette.
 
 ## What gpui-kit cannot separate
 
@@ -82,6 +120,9 @@ the derivation. `BaseStyle` picks the more visible half of each pair.
 7. **No per-widget `QStyle` dispatch.** gpui-kit components choose their own
    tokens. Rules without a named slot (e.g. LaceStyle's flat menu popup
    radius, tab-close wash) stay with the component.
+8. **No shadow or blur tokens.** `Theme` exposes one boolean shadow switch,
+   and each component draws its own shadow. Card and action shadows/glows are
+   app-side in the gallery, not part of `ThemeTokens`.
 
 ## Live toggle
 
@@ -89,7 +130,8 @@ the derivation. `BaseStyle` picks the more visible half of each pair.
 **Lace style / Theme only** button to the title strip. Switching it re-applies
 the current preset with the other layer, and the header's theme arrows keep
 the selected layer. The status bar shows it as `widgets: Lace style` or
-`widgets: Theme only`.
+`widgets: Theme only`. The gallery shell's own shadows and glows stay in both
+modes because they are application presentation rather than theme tokens.
 
 ```sh
 cargo run --example widgets --features gpui-kit
