@@ -15,6 +15,8 @@
 //! - [`themes`] — 16 curated presets, from midnight to cyberpunk_neon.
 //! - [`skin`] *(feature `gpui-kit`)* — the bridge: `apply("dracula", cx)`
 //!   paints a running gpui-kit app with Lace's tokens.
+//! - [`base_style`] *(feature `gpui-kit`)* — LaceStyle's flat widget layer:
+//!   derived outlines, state steps, focus ring, scrollbar and slider mixes.
 //! - [`geometry`] *(feature `gpui-kit`)* — an application-side dock skin:
 //!   gaps, rounded panels, outlines, shadow/glow and configurable splitters.
 //!
@@ -40,6 +42,9 @@ pub mod color;
 pub mod contrast;
 pub mod engine;
 pub mod themes;
+
+#[cfg(feature = "gpui-kit")]
+pub mod base_style;
 
 #[cfg(feature = "gpui-kit")]
 pub mod skin;

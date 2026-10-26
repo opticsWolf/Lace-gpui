@@ -1,5 +1,7 @@
 //! The bridge onto gpui-kit: [`apply`] paints a running app with Lace's
-//! tokens.
+//! tokens, [`apply_base`] adds
+//! [`BaseStyle`](crate::base_style::BaseStyle) — LaceStyle's flat widget
+//! rules — on top.
 //!
 //! Everything in here is feature-gated (`gpui-kit`); the colour core and the
 //! engine never pull a dependency. The mapping starts from gpui-kit's own
@@ -224,12 +226,51 @@ pub fn apply_tokens(theme: &mut Theme, t: &Tokens) {
     };
 }
 
+/// Which widget rendering sits on a Lace palette.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WidgetStyle {
+    /// The palette over gpui-kit's stock widgets.
+    #[default]
+    Theme,
+    /// The palette plus [`BaseStyle`](crate::base_style::BaseStyle):
+    /// LaceStyle's flat outlines, state steps, focus ring, scrollbar and
+    /// slider mixes.
+    LaceBase,
+}
+
+impl WidgetStyle {
+    /// A short label for a toggle or a status line.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Theme => "Theme only",
+            Self::LaceBase => "Lace style",
+        }
+    }
+
+    /// True for [`WidgetStyle::LaceBase`].
+    pub fn is_lace_base(self) -> bool {
+        matches!(self, Self::LaceBase)
+    }
+}
+
 /// Paint the running app with the named theme. `false` when the name is not
 /// one of the 16 curated presets.
 pub fn apply(name: &str, cx: &mut App) -> bool {
+    apply_styled(name, WidgetStyle::Theme, cx)
+}
+
+/// Paint the running app with the named theme and LaceStyle's flat widget
+/// layer. `false` when the name is not one of the 16 curated presets.
+pub fn apply_base(name: &str, cx: &mut App) -> bool {
+    apply_styled(name, WidgetStyle::LaceBase, cx)
+}
+
+/// Paint the running app with the named theme and the chosen widget
+/// rendering. `false` when the name is not one of the 16 curated presets.
+pub fn apply_styled(name: &str, style: WidgetStyle, cx: &mut App) -> bool {
     match crate::themes::by_name(name) {
         Some(spec) => {
-            apply_spec(spec, cx);
+            apply_spec_styled(spec, style, cx);
             true
         }
         None => false,
@@ -238,9 +279,27 @@ pub fn apply(name: &str, cx: &mut App) -> bool {
 
 /// Build and apply a [`ThemeSpec`] the caller owns.
 pub fn apply_spec(spec: &ThemeSpec, cx: &mut App) {
+    apply_spec_styled(spec, WidgetStyle::Theme, cx);
+}
+
+/// Build and apply a [`ThemeSpec`] with the chosen widget rendering.
+pub fn apply_spec_styled(spec: &ThemeSpec, style: WidgetStyle, cx: &mut App) {
     let tokens = crate::build(spec);
-    let theme = Theme::global_mut(cx);
-    apply_tokens(theme, &tokens);
+    {
+        let theme = Theme::global_mut(cx);
+        apply_tokens(theme, &tokens);
+        if style == WidgetStyle::LaceBase {
+            crate::base_style::BaseStyle::from_spec(spec, &tokens).apply(theme);
+        } else {
+            // LaceStyle gates the ring on focus_width; gpui-kit's stock
+            // default is on.
+            theme.focus_ring = true;
+        }
+    }
+    // Colors were edited through `global_mut`, which does not rebuild the
+    // Base projection (the stock scrollbar and resize handles) on its own.
+    Theme::sync_base(cx);
+    cx.refresh_windows();
 }
 
 /// Cycle to the next curated theme (Lace's dark-to-light order). Returns the
@@ -248,6 +307,11 @@ pub fn apply_spec(spec: &ThemeSpec, cx: &mut App) {
 /// (case/`-`/space-insensitive), the theme after it in [`crate::ALL`] is now
 /// on screen.
 pub fn apply_next(current: &str, cx: &mut App) -> &'static str {
+    apply_next_styled(current, WidgetStyle::Theme, cx)
+}
+
+/// [`apply_next`] with a chosen widget rendering.
+pub fn apply_next_styled(current: &str, style: WidgetStyle, cx: &mut App) -> &'static str {
     let names = crate::themes::ALL;
     let norm = current.trim().to_ascii_lowercase().replace(['-', ' '], "_");
     let ix = names
@@ -255,7 +319,7 @@ pub fn apply_next(current: &str, cx: &mut App) -> &'static str {
         .position(|s| s.name == norm)
         .map_or(0, |i| (i + 1) % names.len());
     let next = names[ix].name;
-    apply(next, cx);
+    apply_styled(next, style, cx);
     next
 }
 

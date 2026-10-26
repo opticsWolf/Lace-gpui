@@ -24,6 +24,7 @@ lace-gpui = { version = "0.0.2", features = ["gpui-kit"] }
 | `contrast` | The rulebook and its fixer — port of `lace/theme_contrast.py` (`enforce`) | `color`, `engine` |
 | `themes` | 16 curated presets, dark-to-light, from `midnight` to `cyberpunk_neon` | `engine` |
 | `skin` | The bridge: `apply("dracula", cx)` paints a running gpui-kit app | gpui-kit 0.8 |
+| `base_style` | LaceStyle's flat widget layer — derived outlines, state steps, focus ring, scrollbar and slider mixes | gpui-kit 0.8 |
 | `geometry` | An application-side dock skin: gaps, rounded panels, outlines, shadow/glow and configurable splitters | gpui-kit 0.8 |
 
 The colour core and the engine have **zero dependencies**; only the `gpui-kit`
@@ -38,6 +39,7 @@ assert_eq!(tokens.panel_bg, [68, 71, 90, 255]);
 
 // In a gpui-kit app, after `gpui_kit::init(cx)`:
 lace_gpui::skin::apply("midnight", cx);          // paint once
+lace_gpui::skin::apply_base("midnight", cx);     // + LaceStyle's flat controls
 let now = lace_gpui::skin::apply_next(&now, cx); // cycle all 16 live
 ```
 
@@ -65,6 +67,13 @@ and an accordion:
 ```sh
 cargo run --example widgets --features gpui-kit
 ```
+
+The gallery starts with `WidgetStyle::LaceBase`: LaceStyle's flat outlines,
+`+0.04` hover and `+0.08` pressed steps, accent focus ring, and its scrollbar
+and slider mixes layered over the palette. The **Lace style / Theme only**
+button in the title strip toggles that layer live, and the theme arrows keep
+the selected layer. The mapping and gpui-kit's structural limits are in
+[docs/lace-style-widgets.md](docs/lace-style-widgets.md).
 
 ## The geometric dock
 

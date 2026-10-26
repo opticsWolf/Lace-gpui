@@ -67,7 +67,10 @@ use gpui_kit::component::{
 };
 use gpui_kit::*;
 
-use lace_gpui::{skin, themes};
+use lace_gpui::{
+    skin::{self, WidgetStyle},
+    themes,
+};
 
 // ---------------------------------------------------------------------------
 // Layout helpers
@@ -288,6 +291,7 @@ fn open_delete_alert(window: &mut Window, cx: &mut App) {
 
 struct WidgetsApp {
     theme_name: SharedString,
+    style: WidgetStyle,
     page: usize,
 
     // Controls page state.
@@ -373,6 +377,7 @@ impl WidgetsApp {
 
         Self {
             theme_name: "midnight".into(),
+            style: WidgetStyle::LaceBase,
             page: 0,
             pinned: false,
             newsletter: true,
@@ -410,8 +415,18 @@ impl WidgetsApp {
             .unwrap_or(0);
         let len = themes::ALL.len() as isize;
         let next = themes::ALL[((index as isize + step).rem_euclid(len)) as usize].name;
-        skin::apply(next, cx);
+        skin::apply_styled(next, self.style, cx);
         self.theme_name = next.into();
+        cx.notify();
+    }
+
+    fn set_widget_style(&mut self, style: WidgetStyle, cx: &mut Context<Self>) {
+        if self.style == style {
+            return;
+        }
+        self.style = style;
+        let name = self.theme_name.to_string();
+        skin::apply_styled(&name, style, cx);
         cx.notify();
     }
 
@@ -531,6 +546,26 @@ impl WidgetsApp {
                             .tooltip("Next Lace theme")
                             .on_click(cx.listener(|this, _, _, cx| this.cycle_theme(1, cx))),
                     )
+                    .child(if self.style.is_lace_base() {
+                        Button::new("widget-style")
+                            .label("Lace style")
+                            .primary()
+                            .tooltip(
+                                "LaceStyle's flat controls are on. Click for the plain gpui-kit theme.",
+                            )
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.set_widget_style(WidgetStyle::Theme, cx);
+                            }))
+                    } else {
+                        Button::new("widget-style")
+                            .label("Theme only")
+                            .tooltip(
+                                "Lace's palette over stock gpui-kit widgets. Click for LaceStyle's flat controls.",
+                            )
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.set_widget_style(WidgetStyle::LaceBase, cx);
+                            }))
+                    })
                     .child(
                         Button::new("header-new")
                             .label("New item")
@@ -821,6 +856,7 @@ impl WidgetsApp {
                 row()
                     .gap_4()
                     .child(format!("theme: {}", self.theme_name))
+                    .child(format!("widgets: {}", self.style.label()))
                     .child(format!("mode: {}", if is_light { "light" } else { "dark" }))
                     .child(format!("{} presets \u{00B7} 78 tokens", themes::ALL.len()))
                     .child(concat!("lace-gpui ", env!("CARGO_PKG_VERSION"))),
@@ -2153,8 +2189,9 @@ fn main() {
         .with_assets(gpui_kit::assets::Assets)
         .run(|cx: &mut App| {
             gpui_kit::init(cx);
-            // Lace's darkest preset; the header arrows cycle the rest.
-            skin::apply("midnight", cx);
+            // Lace's darkest preset and LaceStyle's flat controls; the header
+            // arrows cycle the palette and the style button toggles the layer.
+            skin::apply_styled("midnight", WidgetStyle::LaceBase, cx);
 
             // Fit the gallery to the display, even on small or scaled screens.
             let display = cx
