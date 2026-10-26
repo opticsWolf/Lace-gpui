@@ -1,0 +1,29 @@
+[package]
+name = "lace4gpui"
+version = "0.9.7"
+edition = "2021"
+license = "Apache-2.0"
+description = "Lace's OKLCH theming engine, ported to gpui-kit: 16 curated themes, a zero-dependency colour core, and a bridge onto gpui_kit::ThemeColor."
+repository = "https://github.com/opticsWolf/Lace-gpui"
+keywords = ["gpui", "gpui-kit", "theme", "oklch", "color"]
+categories = ["gui"]
+
+[features]
+default = []
+# Bridge the Lace engine onto gpui-kit 0.8 (gpui_kit::Theme / ThemeColor).
+# The colour core itself never pulls a dependency; only this feature does.
+gpui-kit = ["dep:gpui-kit"]
+
+[dependencies]
+gpui-kit = { version = "0.8", optional = true }
+
+[[example]]
+name = "gallery"
+required-features = ["gpui-kit"]
+
+[[example]]
+name = "widgets"
+required-features = ["gpui-kit"]
+
+[profile.release]
+opt-level = 2

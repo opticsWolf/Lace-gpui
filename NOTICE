@@ -1,0 +1,26 @@
+lace4gpui — NOTICE
+
+This crate is a Rust port of parts of Lace, the PySide6 docking system.
+
+  Lace: https://github.com/opticsWolf/Lace
+  Copyright (c) 2026 opticsWolf
+  SPDX-License-Identifier: Apache-2.0
+
+Ported files and their sources (all Apache-2.0, © opticsWolf):
+
+  src/color.rs     <- lace/color_science.py   (OKLab/OKLCH colour math)
+  src/contrast.rs  <- lace/theme_contrast.py  (contrast & separation rulebook)
+  src/engine.rs    <- lace/dock_theme.py      (ThemeSpec + build pipeline)
+  src/themes.rs    <- lace/dock_custom_theme.py (the sixteen palettes + chassis)
+  src/skin.rs      <- original bridge code (this crate)
+
+The OKLab constants come from Björn Ottosson's OKLab (published 2020,
+https://bottosson.github.io/posts/oklab/), used by Lace's colour science and
+by this port in the same matrix form.
+
+This project is licensed under the Apache License, Version 2.0
+(http://www.apache.org/licenses/LICENSE-2.0). Lace itself is licensed under
+the Apache License, Version 2.0.
+
+This project is an independent port and is not affiliated with or endorsed by
+opticsWolf or the Zed Industries / Longbridge gpui projects.
