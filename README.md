@@ -97,8 +97,10 @@ skin.set_style(another_style, cx);                       // live restyle
 skin.set_panel_effect(panel_id, effect, cx);             // per-panel override
 ```
 
-`examples/dock_geometry.rs` is the showcase — an `h_split` of three groups,
-a bottom Logs dock, three presets, live theme cycling, and a per-panel glow
+`examples/dock_geometry.rs` is the showcase — a left Navigator, a centre
+Workbench/Outline `h_split`, a right Inspector and a bottom Output; five tabbed
+groups, twelve panels, three presets, live theme cycling, a **Split lab** tab
+with stock inner `h_resizable`/`v_resizable` groups, and a per-panel shadow
 toggle:
 
 ```sh

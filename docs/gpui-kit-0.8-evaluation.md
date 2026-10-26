@@ -493,23 +493,28 @@ never enabled.
 
 ### 8.2 What the running window showed
 
-- Three groups with rounded corners and a 1 px themed outline.
-- Two interior seams with real gaps, each centred on the splitter band.
-- A vertical channel above the Logs dock, created by the centre frame's flex
+- Four dock regions: a left Navigator, a centre Workbench/Outline `h_split`,
+  a right Inspector, and a bottom Output.
+- Five tab groups and twelve panels: Files/Search, Editor/Split lab/Preview,
+  Outline/Symbols, Properties/History, Logs/Problems/Terminal.
+- A vertical channel above the Output dock, created by the centre frame's flex
   gap rather than by split margins.
-- A vertical channel between a temporary left dock and the centre; removing
-  the left dock left no stray gap.
+- Vertical channels between the left/right docks and the centre, provided by
+  the area frame's flex gap.
 - An outer inset between the whole arrangement and the window frame, painted
   with the gap colour.
-- A 45%-length, 6 px, rounded splitter at the seam in the Flagship preset.
-- The same splitter at 60% and 3 px in Minimal.
-- The capture caught the live switch from Flagship to Minimal, which is
-  direct evidence that `set_style` reaches groups created before the change
-  (D17's shared-`Rc` fix).
-- Per-panel glow via `set_panel_effect` (registry path compiled; the visible
-  capture used the dock-wide glow).
-- Dock-edge handle still stock: the bar visible where the bottom dock meets the
-  centre is the stock hover pill, which is how D18 was noticed.
+- A 45%-length, 6 px, rounded splitter between Workbench and Outline in the
+  Flagship preset; the same splitter is 60% and 3 px in Minimal.
+- The **Split lab** tab is active by default and contains nested stock
+  `h_resizable`/`v_resizable` groups. Inner A/B/C are adjacent, with the stock
+  hairline/pill and no dock gap.
+- The capture caught the live switch from Flagship to Minimal, which is direct
+  evidence that `set_style` reaches groups created before the change (D17's
+  shared-`Rc` fix).
+- Per-panel shadow via `set_panel_effect` (the button targets the Split lab
+  panel; the effect registry is group-granular).
+- Dock-edge handle still stock: the bar at the Output boundary is the stock
+  hover pill, which is how D18 was noticed.
 
 ### 8.3 What the implementation changed in the findings
 
