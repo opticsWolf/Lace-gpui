@@ -7,9 +7,12 @@
 //! cyberpunk_neon with its 10px/8px neon geometry.
 
 use crate::color::rgba;
-use crate::engine::{
-    Contrast, Depth, HoverMode, Rel, Scrollbar, Selection, ThemeSpec, TitleMode,
-};
+use crate::engine::{Contrast, Depth, HoverMode, Rel, Scrollbar, Selection, ThemeSpec, TitleMode};
+
+/// Lace's classic Basics hold inactive edges at this alpha
+/// (`_BASIC_CLASSIC_IDLE_ALPHA`), so the focused area's accent frame is the
+/// line the eye finds.
+const CLASSIC_IDLE_ALPHA: u8 = 85;
 
 /// Lace's classic Basics chassis (`_BASIC_CLASSIC` + `_basic_spec`): 4px
 /// corners, faint outlines at 0.08, darker hovers, and every inactive edge
@@ -53,7 +56,7 @@ pub const MIDNIGHT: ThemeSpec = ThemeSpec {
     name: "midnight",
     base: rgba(11, 13, 20, 255),
     surface: Some(rgba(17, 21, 31, 255)),
-    border: Some(rgba(25, 30, 42, 255)),
+    border: Some(rgba(25, 30, 42, CLASSIC_IDLE_ALPHA)),
     accent: rgba(55, 95, 226, 255),
     text: rgba(206, 211, 224, 255),
     focus_border: Some(rgba(55, 95, 226, 255)),
@@ -66,7 +69,7 @@ pub const DARK: ThemeSpec = ThemeSpec {
     name: "dark",
     base: rgba(18, 19, 20, 255),
     surface: Some(rgba(25, 26, 27, 255)),
-    border: Some(rgba(37, 38, 39, 255)),
+    border: Some(rgba(37, 38, 39, CLASSIC_IDLE_ALPHA)),
     accent: rgba(0, 120, 212, 255),
     text: rgba(202, 204, 207, 255),
     focus_border: Some(rgba(0, 120, 212, 255)),
@@ -79,7 +82,7 @@ pub const MOCHA: ThemeSpec = ThemeSpec {
     name: "mocha",
     base: rgba(36, 30, 27, 255),
     surface: Some(rgba(46, 39, 35, 255)),
-    border: Some(rgba(60, 51, 46, 255)),
+    border: Some(rgba(60, 51, 46, CLASSIC_IDLE_ALPHA)),
     accent: rgba(200, 110, 60, 255),
     text: rgba(235, 225, 210, 255),
     focus_border: Some(rgba(200, 110, 60, 255)),
@@ -92,7 +95,7 @@ pub const SLATE: ThemeSpec = ThemeSpec {
     name: "slate",
     base: rgba(150, 156, 166, 255),
     surface: Some(rgba(168, 174, 184, 255)),
-    border: Some(rgba(132, 138, 148, 255)),
+    border: Some(rgba(132, 138, 148, CLASSIC_IDLE_ALPHA)),
     accent: rgba(22, 70, 150, 255),
     text: rgba(22, 26, 34, 255),
     focus_border: Some(rgba(22, 70, 150, 255)),
@@ -107,7 +110,7 @@ pub const CARAMEL: ThemeSpec = ThemeSpec {
     name: "caramel",
     base: rgba(197, 194, 189, 255),
     surface: Some(rgba(217, 214, 207, 255)),
-    border: Some(rgba(167, 162, 151, 255)),
+    border: Some(rgba(167, 162, 151, CLASSIC_IDLE_ALPHA)),
     accent: rgba(186, 98, 0, 255),
     text: rgba(39, 34, 28, 255),
     focus_border: Some(rgba(186, 98, 0, 255)),
@@ -121,7 +124,7 @@ pub const NEUTRAL: ThemeSpec = ThemeSpec {
     name: "neutral",
     base: rgba(190, 191, 194, 255),
     surface: Some(rgba(210, 211, 214, 255)),
-    border: Some(rgba(170, 171, 175, 255)),
+    border: Some(rgba(170, 171, 175, CLASSIC_IDLE_ALPHA)),
     accent: rgba(6, 108, 196, 255),
     text: rgba(30, 33, 40, 255),
     focus_border: Some(rgba(6, 108, 196, 255)),
@@ -135,7 +138,7 @@ pub const CREAM: ThemeSpec = ThemeSpec {
     name: "cream",
     base: rgba(240, 235, 225, 255),
     surface: Some(rgba(252, 249, 243, 255)),
-    border: Some(rgba(226, 219, 207, 255)),
+    border: Some(rgba(226, 219, 207, CLASSIC_IDLE_ALPHA)),
     accent: rgba(176, 92, 0, 255),
     text: rgba(48, 40, 32, 255),
     focus_border: Some(rgba(176, 92, 0, 255)),
@@ -149,7 +152,7 @@ pub const LIGHT: ThemeSpec = ThemeSpec {
     name: "light",
     base: rgba(238, 238, 241, 255),
     surface: Some(rgba(249, 249, 252, 255)),
-    border: Some(rgba(225, 225, 228, 255)),
+    border: Some(rgba(225, 225, 228, CLASSIC_IDLE_ALPHA)),
     accent: rgba(0, 102, 192, 255),
     text: rgba(45, 47, 52, 255),
     focus_border: Some(rgba(0, 102, 192, 255)),

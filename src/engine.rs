@@ -698,7 +698,11 @@ pub fn build_unenforced(spec: &ThemeSpec) -> (Tokens, Explicit) {
 /// harmonized with its container.
 fn blend30(fg: Rgba, bg: Rgba) -> Rgba {
     let f = 0.30;
-    let mix = |a: u8, b: u8| -> u8 { (a as f64 * (1.0 - f) + b as f64 * f).round() as u8 };
+    // Python's `round` (which Lace's `_blend_rgba` uses) rounds halves to
+    // even; Rust's `round` rounds them away from zero.
+    let mix = |a: u8, b: u8| -> u8 {
+        (a as f64 * (1.0 - f) + b as f64 * f).round_ties_even() as u8
+    };
     [
         mix(fg[0], bg[0]),
         mix(fg[1], bg[1]),

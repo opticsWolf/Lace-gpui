@@ -123,6 +123,9 @@ pub enum Ref {
     TextMuted,
     TextActive,
     DisabledText,
+    /// The shared action-button glyph colour (`_btn_disabled`): side-panel
+    /// buttons, tab close buttons and title-bar buttons all use it.
+    ButtonDisabled,
     TooltipText,
     TabCloseBtn,
     FocusBorder,
@@ -154,6 +157,7 @@ impl Ref {
             Ref::TextMuted => t.text_muted,
             Ref::TextActive => t.text_active,
             Ref::DisabledText => t.disabled_text,
+            Ref::ButtonDisabled => t.title_button_disabled,
             Ref::TooltipText => t.tooltip_text,
             Ref::TabCloseBtn => t.tab_close_btn,
             Ref::FocusBorder => t.focus_border_color,
@@ -168,7 +172,7 @@ impl Ref {
         }
     }
 
-    pub fn set(self, t: &mut Tokens, c: Rgba) {
+    pub fn set(self, t: &mut Tokens, c: Rgba, explicit: &Explicit) {
         match self {
             Ref::CanvasBg => {
                 t.canvas_bg = c;
@@ -200,6 +204,11 @@ impl Ref {
                 t.text = c;
                 t.sidepanel_title_text = c;
                 t.overlay_arrow = c;
+                // Lace's tooltip text defaults to the same list as `text`;
+                // an explicit tooltip text is the only thing that opts out.
+                if !explicit.tooltip_text {
+                    t.tooltip_text = c;
+                }
             }
             Ref::TextMuted => {
                 t.text_muted = c;
@@ -219,6 +228,9 @@ impl Ref {
             Ref::DisabledText => {
                 t.disabled_text = c;
                 t.sidebar_tab_text_disabled = c;
+            }
+            Ref::ButtonDisabled => {
+                // One list in Lace (`_btn_disabled`), shared by all three.
                 t.title_button_disabled = c;
                 t.sidepanel_button_disabled = c;
                 t.tab_close_btn_disabled = c;
@@ -229,15 +241,34 @@ impl Ref {
                 t.focus_border_color = c;
                 t.sidepanel_focus_border = c;
                 t.title_focus_border = c;
+                // Lace's `_focus_border` *is* the border list when the spec
+                // leaves it unset, so a focus fix moves the edges too.
+                if !explicit.focus_border_color && explicit.border_color {
+                    t.border_color = c;
+                    t.sidebar_tab_border_normal = c;
+                    t.sidepanel_border = c;
+                    t.tab_border_normal = c;
+                    t.title_border_color = c;
+                }
             }
             Ref::AccentColor => {
                 t.accent_color = c;
+                // Lace seeds `PANEL.highlight` with the same list as the
+                // accent, so contrast fixes to the accent carry into the
+                // selection fill (and from there into its selected text).
+                t.highlight = c;
                 t.sidebar_tab_border_active = c;
                 t.sidebar_indicator = c;
                 t.sidebar_badge_bg = c;
                 t.tab_border_active = c;
                 t.tab_indicator = c;
                 t.splitter_handle_hover = c;
+                // `_accent_dim` is a follower: it takes the accent's new RGB
+                // but keeps its own 25% alpha.
+                let overlay_alpha = t.overlay_color[3];
+                t.overlay_color = [c[0], c[1], c[2], overlay_alpha];
+                let dim_alpha = t.accent_dim[3];
+                t.accent_dim = [c[0], c[1], c[2], dim_alpha];
             }
             Ref::AccentBright => {
                 t.accent_bright = c;
@@ -248,7 +279,16 @@ impl Ref {
                 t.border_color = c;
                 t.sidebar_tab_border_normal = c;
                 t.sidepanel_border = c;
+                // Lace's `_neutral_border` list is also the dock-tab outline.
+                t.tab_border_normal = c;
                 t.title_border_color = c;
+                // ...and the focus border when it was derived from the
+                // border list (spec had a border but no focus colour).
+                if !explicit.focus_border_color && explicit.border_color {
+                    t.focus_border_color = c;
+                    t.sidepanel_focus_border = c;
+                    t.title_focus_border = c;
+                }
             }
             Ref::HighlightedText => t.highlighted_text = c,
             Ref::Success => t.success = c,
@@ -298,7 +338,9 @@ const CONTRAST_PAIRS: &[(Role, Ref, Ref)] = &[
     (Role::Muted, Ref::TabCloseBtn, Ref::PanelBg),
     (Role::Disabled, Ref::DisabledText, Ref::PanelBg),
     (Role::Disabled, Ref::DisabledText, Ref::CanvasBg),
-    (Role::Disabled, Ref::DisabledText, Ref::TabBgNormal),
+    // Lace pairs `_btn_disabled` with the title strip, not with the disabled
+    // text; the fix then reaches its side-panel and tab mirrors.
+    (Role::Disabled, Ref::ButtonDisabled, Ref::TabBgNormal),
     (Role::Ui, Ref::FocusBorder, Ref::CanvasBg),
     (Role::Ui, Ref::AccentColor, Ref::TabBgNormal),
     (Role::Ui, Ref::AccentColor, Ref::CanvasBg),
@@ -365,13 +407,17 @@ impl Origin {
             Ref::Error,
             Ref::Info,
         ];
-        Origin {
-            values: refs
-                .iter()
-                .filter(|r| r.is_explicit(explicit))
-                .map(|r| (*r, r.get(tokens)))
-                .collect(),
+        let mut values: Vec<(Ref, Rgba)> = refs
+            .iter()
+            .filter(|r| r.is_explicit(explicit))
+            .map(|r| (*r, r.get(tokens)))
+            .collect();
+        // When the spec omits a focus border, Lace derives it from the
+        // border list and both tokens share that list's explicit origin.
+        if !explicit.focus_border_color && explicit.border_color {
+            values.push((Ref::FocusBorder, tokens.border_color));
         }
+        Origin { values }
     }
 
     fn of(&self, r: Ref) -> Option<Rgba> {
@@ -453,7 +499,7 @@ pub fn enforce(tokens: &mut Tokens, spec: &ThemeSpec, explicit: &Explicit) {
             continue;
         }
         if let Some(want) = touch_fix(s, f, o, target) {
-            surface.set(tokens, want);
+            surface.set(tokens, want, explicit);
         }
     }
 
@@ -526,7 +572,7 @@ pub fn enforce(tokens: &mut Tokens, spec: &ThemeSpec, explicit: &Explicit) {
             .max_by_key(|c| (lightness_gap(*c, p) * 1e9) as u64)
             .unwrap();
         if lightness_gap(best, p) > gap {
-            s_ref.set(tokens, best);
+            s_ref.set(tokens, best, explicit);
         }
     }
 
@@ -604,8 +650,15 @@ pub fn enforce(tokens: &mut Tokens, spec: &ThemeSpec, explicit: &Explicit) {
             })
             .unwrap();
         if color::contrast_ratio(best, anchor_bg) > now && unreadable(best) <= unreadable(fg) {
-            fg_ref.set(tokens, best);
+            fg_ref.set(tokens, best, explicit);
         }
+    }
+
+    // Lace's tooltip text defaults to the same list as `text`, so it inherits
+    // the text colour's explicit cap rather than being fixed independently.
+    // An explicit `tooltip_text` is the only case that keeps its own value.
+    if !explicit.tooltip_text {
+        tokens.tooltip_text = tokens.text;
     }
 
     status_pass(tokens, explicit);
@@ -660,7 +713,7 @@ fn status_pass(tokens: &mut Tokens, explicit: &Explicit) {
         if let Some(best) = cands.iter().copied().min_by_key(|c| score(c)) {
             let (failing, _, _) = score(&best);
             if failing < orig_failing {
-                r.set(tokens, best);
+                r.set(tokens, best, explicit);
             }
         }
     }

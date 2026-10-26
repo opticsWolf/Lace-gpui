@@ -105,6 +105,18 @@ Three documented simplifications:
    colours little room). Explicit colours only move when the move helps, and
    stay within the same `EXPLICIT_MAX_DE` cap.
 
+The eight classic Basics are also checked token-for-token against Lace
+0.9.7 in `tests/classic_parity.rs`, including the shared-list behaviour
+(border/focus mirrors, disabled action glyphs, accent/highlight/overlay and
+tooltip text).
+
+A few second-order differences remain outside the classic Basics:
+catppuccin and tokyo_night's shared text is solved as one grouped contrast
+pass (a few RGB steps from Lace's sequential pass); solarized_dark keeps the
+port's status floor; and cyberpunk_neon's sidebar tab rings fall back to the
+border/accent because `ThemeSpec` does not carry Lace's
+`sidebar_tab_border_*` overrides yet.
+
 `enforce` also never lets an explicit colour end worse than the spec left it
 (the `worse` tiebreak in candidate scoring), and only moves it when a rule it
 misses improves.
@@ -132,6 +144,10 @@ Non-colour knobs: `radius` ← `control_radius`, `radius_lg` ← `corner_radius`
   visibility; `keep_tint` semantics; the tint-selection contract (±3
   channels around the derived input); geometry passthrough; explicit colours
   stay capped.
+- `tests/classic_parity.rs` — the eight classic Basics' shared-token layer
+  pinned to Lace 0.9.7's exact output: the 85-alpha idle border, its tab /
+  side-panel / title mirrors, the shared disabled action glyph, the
+  accent-derived selection fill and overlay, and tooltip text.
 
 ```sh
 cargo test                              # core: runs anywhere
