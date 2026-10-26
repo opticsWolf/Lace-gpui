@@ -7,7 +7,7 @@
 //!
 //! No gpui anywhere: the crate's core (colour + engine + themes) is
 //! zero-dependency, so this builds and runs in any environment. The JSON
-//! carries all 78 colour tokens per theme, the 7 geometry tokens, the spec
+//! carries all 79 colour tokens per theme, the 7 geometry tokens, the spec
 //! knobs that produced them, and Lace's outline recipe
 //! (`color::mix(button_bg, text, outline_strength)`).
 
@@ -116,6 +116,7 @@ fn main() {
             ("sidebar_tab_bg_active", t.sidebar_tab_bg_active),
             ("sidebar_tab_border_normal", t.sidebar_tab_border_normal),
             ("sidebar_tab_border_active", t.sidebar_tab_border_active),
+            ("sidebar_tab_border_hover", t.sidebar_tab_border_hover),
             ("sidebar_tab_text_normal", t.sidebar_tab_text_normal),
             ("sidebar_tab_text_active", t.sidebar_tab_text_active),
             ("sidebar_tab_text_disabled", t.sidebar_tab_text_disabled),
@@ -182,6 +183,9 @@ fn main() {
             ("surface", hx_opt(spec.surface)),
             ("border", hx_opt(spec.border)),
             ("focus_border", hx_opt(spec.focus_border)),
+            ("sidebar_tab_border", hx_opt(spec.sidebar_tab_border)),
+            ("sidebar_tab_border_active", hx_opt(spec.sidebar_tab_border_active)),
+            ("sidebar_tab_border_hover", hx_opt(spec.sidebar_tab_border_hover)),
             ("title_bg", hx_opt(spec.title_bg)),
             ("tooltip_bg", hx_opt(spec.tooltip_bg)),
             ("tooltip_text", hx_opt(spec.tooltip_text)),

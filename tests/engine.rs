@@ -257,3 +257,27 @@ fn explicit_colors_stay_capped() {
     let after = color::contrast_ratio(t.text, t.canvas_bg);
     assert!(after > before, "cap applied without improving: {:.2} -> {:.2}", before, after);
 }
+
+// -----------------------------------------------------------------------
+// 14. Sidebar ring overrides: pinned colours win, otherwise the ring
+//     follows the shared border/accent lists.
+// -----------------------------------------------------------------------
+#[test]
+fn sidebar_tab_border_overrides() {
+    // cyberpunk_neon rings only the active tab: idle is transparent, active
+    // is the focus cyan, and hover is the accent pink.
+    let neon = build(by_name("cyberpunk_neon").unwrap());
+    assert_eq!(neon.sidebar_tab_border_normal, [0, 0, 0, 0]);
+    assert_eq!(neon.sidebar_tab_border_active, [0, 240, 255, 255]);
+    assert_eq!(neon.sidebar_tab_border_hover, [255, 0, 127, 255]);
+
+    // A theme without overrides seeds the ring from the border and accent,
+    // and a hover keeps the inactive outline.
+    let midnight = build(by_name("midnight").unwrap());
+    assert_eq!(midnight.sidebar_tab_border_normal, midnight.border_color);
+    assert_eq!(midnight.sidebar_tab_border_active, midnight.accent_color);
+    assert_eq!(
+        midnight.sidebar_tab_border_hover,
+        midnight.sidebar_tab_border_normal
+    );
+}

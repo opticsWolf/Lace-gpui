@@ -66,7 +66,7 @@ cargo run --example widgets --features gpui-kit
 ```
 
 `examples/dump_tokens.rs` needs no features and no display: it prints all 16
-themes' enforced `Tokens` (78 colours + 7 geometry values + spec knobs) as
+themes' enforced `Tokens` (79 colours + 7 geometry values + spec knobs) as
 JSON, e.g. for docs or diffing:
 
 ```sh
@@ -112,10 +112,13 @@ tooltip text).
 
 A few second-order differences remain outside the classic Basics:
 catppuccin and tokyo_night's shared text is solved as one grouped contrast
-pass (a few RGB steps from Lace's sequential pass); solarized_dark keeps the
-port's status floor; and cyberpunk_neon's sidebar tab rings fall back to the
-border/accent because `ThemeSpec` does not carry Lace's
-`sidebar_tab_border_*` overrides yet.
+pass (a few RGB steps from Lace's sequential pass), and solarized_dark keeps
+the port's status floor.
+
+The sidebar-tab outline can be pinned with `sidebar_tab_border` /
+`sidebar_tab_border_active` / `sidebar_tab_border_hover`; unpinned rings
+follow the shared border and accent lists, and a hover falls back to the
+inactive ring exactly as Lace's unset key does.
 
 `enforce` also never lets an explicit colour end worse than the spec left it
 (the `worse` tiebreak in candidate scoring), and only moves it when a rule it
@@ -138,16 +141,17 @@ Non-colour knobs: `radius` ← `control_radius`, `radius_lg` ← `corner_radius`
 
 - `src/color.rs` — 14 unit tests: matrix round trips, gamut mapping keeping L
   and hue, WCAG reference values, hex parsing, mix/step/ensure_contrast.
-- `tests/engine.rs` — 14 integration tests: every theme derives and has a
+- `tests/engine.rs` — 15 integration tests: every theme derives and has a
   unique token fingerprint; `is_light` per chassis; body / active-tab /
   muted / selection text floors; surface and hover separation; status
   visibility; `keep_tint` semantics; the tint-selection contract (±3
   channels around the derived input); geometry passthrough; explicit colours
-  stay capped.
+  stay capped; sidebar ring overrides.
 - `tests/classic_parity.rs` — the eight classic Basics' shared-token layer
   pinned to Lace 0.9.7's exact output: the 85-alpha idle border, its tab /
   side-panel / title mirrors, the shared disabled action glyph, the
-  accent-derived selection fill and overlay, and tooltip text.
+  accent-derived selection fill and overlay, the sidebar hover ring, and
+  tooltip text.
 
 ```sh
 cargo test                              # core: runs anywhere

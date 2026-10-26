@@ -152,6 +152,13 @@ pub struct ThemeSpec {
     pub border: Option<Rgba>,
     /// Optional focus outline; defaults from `border` or the accent.
     pub focus_border: Option<Rgba>,
+    /// Optional sidebar-tab outline for inactive tabs; defaults to `border`.
+    pub sidebar_tab_border: Option<Rgba>,
+    /// Optional sidebar-tab outline for the active tab; defaults to `accent`.
+    pub sidebar_tab_border_active: Option<Rgba>,
+    /// Optional sidebar-tab outline for hovered tabs; defaults to the
+    /// inactive outline (Lace leaves the key unset, so a hover keeps it).
+    pub sidebar_tab_border_hover: Option<Rgba>,
     /// Explicit tab/title-bar background. Overrides the derived value (a
     /// fixed step off the panel). Same role for the header that `surface`
     /// plays for the panel.
@@ -206,6 +213,9 @@ impl ThemeSpec {
     surface: None,
     border: None,
     focus_border: None,
+    sidebar_tab_border: None,
+    sidebar_tab_border_active: None,
+    sidebar_tab_border_hover: None,
     title_bg: None,
     tooltip_bg: None,
     tooltip_text: None,
@@ -316,6 +326,7 @@ pub struct Tokens {
     pub sidebar_tab_bg_active: Rgba,
     pub sidebar_tab_border_normal: Rgba,
     pub sidebar_tab_border_active: Rgba,
+    pub sidebar_tab_border_hover: Rgba,
     pub sidebar_tab_text_normal: Rgba,
     pub sidebar_tab_text_active: Rgba,
     pub sidebar_tab_text_disabled: Rgba,
@@ -416,6 +427,9 @@ pub struct Explicit {
     pub panel_bg: bool,
     pub border_color: bool,
     pub focus_border_color: bool,
+    pub sidebar_tab_border: bool,
+    pub sidebar_tab_border_active: bool,
+    pub sidebar_tab_border_hover: bool,
     pub tab_bg_normal: bool,
     pub tooltip_bg: bool,
     pub tooltip_text: bool,
@@ -473,6 +487,16 @@ pub fn build_unenforced(spec: &ThemeSpec) -> (Tokens, Explicit) {
             None => color::step(accent, d * 0.07),
         },
     };
+
+    // Sidebar-tab outlines are seeded from the border and accent, but a spec
+    // may pin either one (and, for the hover cue, a third colour). Lace keeps
+    // the outline keys absent when no hover override is given, so a hovered
+    // tab falls back to the inactive outline.
+    let sidebar_tab_border = spec.sidebar_tab_border.unwrap_or(neutral_border);
+    let sidebar_tab_border_active = spec.sidebar_tab_border_active.unwrap_or(accent);
+    let sidebar_tab_border_hover = spec
+        .sidebar_tab_border_hover
+        .unwrap_or(sidebar_tab_border);
 
     // Title bar / header background: a step darker or lighter than the
     // panel, by title_mode.
@@ -579,6 +603,9 @@ pub fn build_unenforced(spec: &ThemeSpec) -> (Tokens, Explicit) {
         panel_bg: spec.surface.is_some(),
         border_color: spec.border.is_some(),
         focus_border_color: spec.focus_border.is_some(),
+        sidebar_tab_border: spec.sidebar_tab_border.is_some(),
+        sidebar_tab_border_active: spec.sidebar_tab_border_active.is_some(),
+        sidebar_tab_border_hover: spec.sidebar_tab_border_hover.is_some(),
         tab_bg_normal: spec.title_bg.is_some(),
         tooltip_bg: spec.tooltip_bg.is_some(),
         tooltip_text: spec.tooltip_text.is_some(),
@@ -633,8 +660,9 @@ pub fn build_unenforced(spec: &ThemeSpec) -> (Tokens, Explicit) {
         sidebar_tab_bg_hover_start: hover,
         sidebar_tab_bg_hover_end: hover_end,
         sidebar_tab_bg_active: panel,
-        sidebar_tab_border_normal: neutral_border,
-        sidebar_tab_border_active: accent,
+        sidebar_tab_border_normal: sidebar_tab_border,
+        sidebar_tab_border_active,
+        sidebar_tab_border_hover,
         sidebar_tab_text_normal: text_muted,
         sidebar_tab_text_active: text_active,
         sidebar_tab_text_disabled: text_disabled,

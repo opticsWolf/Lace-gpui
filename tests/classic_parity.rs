@@ -102,6 +102,10 @@ fn classic_themes_match_lace_shared_tokens() {
             t.sidebar_tab_border_normal, border,
             "{name}: sidebar tab border"
         );
+        assert_eq!(
+            t.sidebar_tab_border_hover, border,
+            "{name}: sidebar tab hover ring keeps the idle outline"
+        );
 
         // Lace's one `_btn_disabled` list, shared by all action buttons.
         assert_eq!(

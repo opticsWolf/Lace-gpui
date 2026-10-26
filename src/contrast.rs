@@ -245,10 +245,15 @@ impl Ref {
                 // leaves it unset, so a focus fix moves the edges too.
                 if !explicit.focus_border_color && explicit.border_color {
                     t.border_color = c;
-                    t.sidebar_tab_border_normal = c;
                     t.sidepanel_border = c;
                     t.tab_border_normal = c;
                     t.title_border_color = c;
+                    if !explicit.sidebar_tab_border {
+                        t.sidebar_tab_border_normal = c;
+                        if !explicit.sidebar_tab_border_hover {
+                            t.sidebar_tab_border_hover = c;
+                        }
+                    }
                 }
             }
             Ref::AccentColor => {
@@ -257,7 +262,9 @@ impl Ref {
                 // accent, so contrast fixes to the accent carry into the
                 // selection fill (and from there into its selected text).
                 t.highlight = c;
-                t.sidebar_tab_border_active = c;
+                if !explicit.sidebar_tab_border_active {
+                    t.sidebar_tab_border_active = c;
+                }
                 t.sidebar_indicator = c;
                 t.sidebar_badge_bg = c;
                 t.tab_border_active = c;
@@ -277,11 +284,19 @@ impl Ref {
             }
             Ref::BorderColor => {
                 t.border_color = c;
-                t.sidebar_tab_border_normal = c;
                 t.sidepanel_border = c;
                 // Lace's `_neutral_border` list is also the dock-tab outline.
                 t.tab_border_normal = c;
                 t.title_border_color = c;
+                // The sidebar ring follows the border only when the spec did
+                // not pin it; a pinned ring keeps its own list (and a hover
+                // that defaults to it stays put too).
+                if !explicit.sidebar_tab_border {
+                    t.sidebar_tab_border_normal = c;
+                    if !explicit.sidebar_tab_border_hover {
+                        t.sidebar_tab_border_hover = c;
+                    }
+                }
                 // ...and the focus border when it was derived from the
                 // border list (spec had a border but no focus colour).
                 if !explicit.focus_border_color && explicit.border_color {
