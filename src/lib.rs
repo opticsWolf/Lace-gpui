@@ -1,4 +1,4 @@
-//! lace4gpui — Lace's OKLCH theming engine, ported to gpui-kit.
+//! lace-gpui — Lace's OKLCH theming engine, ported to gpui-kit.
 //!
 //! Lace ([opticsWolf/Lace](https://github.com/opticsWolf/Lace), Apache-2.0)
 //! derives a complete dock theme from three to five seed colours in OKLCH,
@@ -18,11 +18,11 @@
 //!
 //! ```
 //! // The colour core alone:
-//! let tokens = lace4gpui::build(lace4gpui::themes::by_name("dracula").unwrap());
+//! let tokens = lace_gpui::build(lace_gpui::themes::by_name("dracula").unwrap());
 //! assert!(!tokens.is_light);
 //!
 //! // WCAG body text on the panel, enforced by the engine:
-//! let ratio = lace4gpui::color::contrast_ratio(tokens.text, tokens.panel_bg);
+//! let ratio = lace_gpui::color::contrast_ratio(tokens.text, tokens.panel_bg);
 //! assert!(ratio > 4.5);
 //! ```
 //!

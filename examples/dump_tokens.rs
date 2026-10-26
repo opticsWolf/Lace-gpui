@@ -11,7 +11,7 @@
 //! knobs that produced them, and Lace's outline recipe
 //! (`color::mix(button_bg, text, outline_strength)`).
 
-use lace4gpui::{build, color::Rgba, themes};
+use lace_gpui::{build, color::Rgba, themes};
 
 /// `#rrggbb`, plus `[aa]` appended when the colour is not opaque.
 fn hx(c: Rgba) -> String {
@@ -169,9 +169,9 @@ fn main() {
         ]);
 
         let scrollbar = match t.scrollbar {
-            lace4gpui::engine::Scrollbar::Thin => "thin",
-            lace4gpui::engine::Scrollbar::Expanding => "expanding",
-            lace4gpui::engine::Scrollbar::Fusion => "fusion",
+            lace_gpui::engine::Scrollbar::Thin => "thin",
+            lace_gpui::engine::Scrollbar::Expanding => "expanding",
+            lace_gpui::engine::Scrollbar::Fusion => "fusion",
         };
 
         let spec_json = raw_obj(&[
@@ -192,9 +192,9 @@ fn main() {
             (
                 "is_light",
                 quoted(match spec.is_light {
-                    lace4gpui::engine::Rel::Auto => "auto",
-                    lace4gpui::engine::Rel::Light => "light",
-                    lace4gpui::engine::Rel::Dark => "dark",
+                    lace_gpui::engine::Rel::Auto => "auto",
+                    lace_gpui::engine::Rel::Light => "light",
+                    lace_gpui::engine::Rel::Dark => "dark",
                 }),
             ),
             ("keep_tint", format!("{}", spec.keep_tint)),
@@ -218,7 +218,7 @@ fn main() {
             ("title_height", num(t.title_height)),
         ]);
 
-        let outline_mix = lace4gpui::color::mix(t.button_bg, t.text, t.outline_strength);
+        let outline_mix = lace_gpui::color::mix(t.button_bg, t.text, t.outline_strength);
 
         out.push_str(&format!(
             "{{\"name\":{},\"is_light\":{},\"scrollbar\":{},\"dock_chrome\":{},\"spec\":{},\"colors\":{{\"core\":{},\"panel\":{},\"derived\":{},\"sidebar\":{},\"sidepanel\":{},\"tab\":{},\"title_bar\":{},\"splitter\":{},\"overlay\":{}}},\"geometry\":{},\"outline_mix\":{}}}",

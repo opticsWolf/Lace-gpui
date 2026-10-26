@@ -22,7 +22,7 @@
 //!   keyboard hints, links and an accordion.
 //!
 //! The arrows in the header walk all sixteen Lace presets live. Everything
-//! recolours through [`lace4gpui::skin`], no restart.
+//! recolours through [`lace_gpui::skin`], no restart.
 
 use gpui_kit::component::{
     accordion::Accordion,
@@ -67,7 +67,7 @@ use gpui_kit::component::{
 };
 use gpui_kit::*;
 
-use lace4gpui::{skin, themes};
+use lace_gpui::{skin, themes};
 
 // ---------------------------------------------------------------------------
 // Layout helpers
@@ -194,7 +194,7 @@ fn open_about(window: &mut Window, cx: &mut App) {
                             .item("Presets", "16 curated themes", 1)
                             .item("Tokens", "78 colours + 7 geometry values", 1)
                             .item("Contrast", "WCAG floors enforced on every build", 1)
-                            .item("Bridge", "lace4gpui::skin \u{2192} gpui_kit::ThemeColor", 1),
+                            .item("Bridge", "lace_gpui::skin \u{2192} gpui_kit::ThemeColor", 1),
                     ),
             )
             .footer(
@@ -823,7 +823,7 @@ impl WidgetsApp {
                     .child(format!("theme: {}", self.theme_name))
                     .child(format!("mode: {}", if is_light { "light" } else { "dark" }))
                     .child(format!("{} presets \u{00B7} 78 tokens", themes::ALL.len()))
-                    .child("lace4gpui 0.9.7"),
+                    .child("lace-gpui 0.9.7"),
             )
     }
 
@@ -2097,7 +2097,7 @@ impl WidgetsApp {
                             })
                             .item(|item| {
                                 item.title("How does the bridge work?")
-                                    .child("lace4gpui::skin maps the engine's Tokens onto gpui-kit's ThemeColor, its radii, its scrollbar mode and its panel chrome.")
+                                    .child("lace_gpui::skin maps the engine's Tokens onto gpui-kit's ThemeColor, its radii, its scrollbar mode and its panel chrome.")
                             })
                             .item(|item| {
                                 item.title("Can I ship my own palette?")

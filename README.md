@@ -1,4 +1,4 @@
-# lace4gpui
+# lace-gpui
 
 Lace's OKLCH theming engine, ported to [gpui-kit](https://crates.io/crates/gpui-kit)
 (formerly `gpui-component`).
@@ -12,7 +12,7 @@ cycle them live.
 
 ```toml
 [dependencies]
-lace4gpui = { version = "0.9.7", features = ["gpui-kit"] }
+lace-gpui = { version = "0.9.7", features = ["gpui-kit"] }
 ```
 
 ## Layout
@@ -32,12 +32,12 @@ feature pulls a crate.
 
 ```rust
 // Anywhere — no gpui in sight:
-let tokens = lace4gpui::build(lace4gpui::themes::by_name("dracula").unwrap());
+let tokens = lace_gpui::build(lace_gpui::themes::by_name("dracula").unwrap());
 assert_eq!(tokens.panel_bg, [68, 71, 90, 255]);
 
 // In a gpui-kit app, after `gpui_kit::init(cx)`:
-lace4gpui::skin::apply("midnight", cx);          // paint once
-let now = lace4gpui::skin::apply_next(&now, cx); // cycle all 16 live
+lace_gpui::skin::apply("midnight", cx);          // paint once
+let now = lace_gpui::skin::apply_next(&now, cx); // cycle all 16 live
 ```
 
 `examples/gallery.rs` is a full dock application — left/right/bottom docks,

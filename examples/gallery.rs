@@ -10,7 +10,7 @@
 //! tabbed editor in the center) wearing whichever Lace theme is current.
 //! The status bar's button walks all 16 presets in Lace's dark-to-light
 //! order — every widget in the window recolours through
-//! [`lace4gpui::skin`], no restart, no reload.
+//! [`lace_gpui::skin`], no restart, no reload.
 //!
 //! The center's second tab, **Geometry**, is a per-token geometry lab: it
 //! draws each theme's radii, borders, outline strength and focus ring at
@@ -27,7 +27,7 @@ use gpui_kit::component::dock::{
 use gpui_kit::component::theme::ActiveTheme;
 use gpui_kit::*; // the glob includes AppContext, needed for cx.new siblings
 
-use lace4gpui::{build as build_tokens, color, skin, themes};
+use lace_gpui::{build as build_tokens, color, skin, themes};
 
 /// Token colour -> gpui paint colour (the same conversion `skin` uses).
 fn h(c: color::Rgba) -> Hsla {
@@ -251,9 +251,9 @@ impl Render for GeoPanel {
                     .child(format!(
                         "scrollbar: {}",
                         match t.scrollbar {
-                            lace4gpui::engine::Scrollbar::Thin => "thin",
-                            lace4gpui::engine::Scrollbar::Expanding => "expanding",
-                            lace4gpui::engine::Scrollbar::Fusion => "fusion",
+                            lace_gpui::engine::Scrollbar::Thin => "thin",
+                            lace_gpui::engine::Scrollbar::Expanding => "expanding",
+                            lace_gpui::engine::Scrollbar::Fusion => "fusion",
                         }
                     ))
                     .child(format!("title: {}", fmt_px(t.title_height)))
@@ -525,7 +525,7 @@ fn main() {
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             titlebar: Some(TitlebarOptions {
-                title: Some("lace4gpui gallery".into()),
+                title: Some("lace-gpui gallery".into()),
                 ..Default::default()
             }),
             ..Default::default()

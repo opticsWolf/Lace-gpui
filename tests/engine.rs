@@ -2,10 +2,10 @@
 //! bridge relies on. Floors that look arbitrary are the enforcement
 //! contract's own numbers — see the comments where they came from.
 
-use lace4gpui::color;
-use lace4gpui::contrast::{separation_target, SepRole, EXPLICIT_MAX_DE};
-use lace4gpui::engine::{build, spec_from_hex, Depth, Selection};
-use lace4gpui::themes::{by_name, ALL};
+use lace_gpui::color;
+use lace_gpui::contrast::{separation_target, SepRole, EXPLICIT_MAX_DE};
+use lace_gpui::engine::{build, spec_from_hex, Depth, Selection};
+use lace_gpui::themes::{by_name, ALL};
 
 fn gap(a: [u8; 4], b: [u8; 4]) -> f64 {
     (color::to_oklch(a).0 - color::to_oklch(b).0).abs()

@@ -234,7 +234,7 @@ impl ThemeSpec {
 /// Convenience constructor: five hex seeds and the stock chassis.
 ///
 /// ```
-/// use lace4gpui::engine::{spec_from_hex, build};
+/// use lace_gpui::engine::{spec_from_hex, build};
 ///
 /// let spec = spec_from_hex("mine", "#1e1e2e", "#f5c2e7", "#cdd6f4", None, None);
 /// let tokens = build(&spec);
