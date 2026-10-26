@@ -9,13 +9,15 @@
 //! The centre is an `h_split` of three tab groups, so the two interior seams
 //! show every feature at once: the 8 px gap, the channel colour behind it, the
 //! rounded and outlined panel frames, the glow, and a 6 px rounded splitter.
+//! The bottom Logs dock gets a vertical channel from the centre frame's flex
+//! gap, and `gap_outer` pads the whole area against the window frame.
 //! The status bar switches between three presets and cycles the Lace themes,
 //! and the per-panel button gives the editor tab its own glow to show the
 //! effect registry.
 //!
-//! Vertical gaps are not available in gpui-kit 0.8; see
-//! `docs/gpui-kit-0.8-feasibility.md`. The layout here is horizontal on
-//! purpose so every seam in the showcase gets a gap.
+//! Vertical gaps **inside a `v_split`** still need the gpui-base panel-axis fix;
+//! inter-dock vertical gaps, including the Logs channel, do not. See
+//! `docs/gpui-kit-0.8-feasibility.md`.
 
 use std::sync::Arc;
 
@@ -165,7 +167,7 @@ impl DockGeometryDemo {
         let editor = cx.new(|cx| {
             InfoPanel::new(
                 "Editor",
-                "The centre is an h_split, so both interior seams get a real 8 px gap.\n\nThe channel behind them is the split frame's background; the panels are inset by half the gap on each interior side, which is why the two neighbours share one centred channel.",
+                "The centre is an h_split, so both interior seams get a real 8 px gap.\n\nThe channel behind them is the split frame's background; the panels are inset by half the gap on each interior side, which is why the two neighbours share one centred channel.\n\nThe Logs dock gets its vertical channel from the centre frame's flex gap, and gap_outer insets the whole area from the window frame.",
                 cx,
             )
         });
@@ -179,7 +181,7 @@ impl DockGeometryDemo {
         let logs = cx.new(|cx| {
             InfoPanel::new(
                 "Logs",
-                "12:00:01  INFO  geometry skin installed\n12:00:02  DEBUG  gap 8px · radius 10px · splitter 6px\n12:00:03  WARN  vertical gaps unavailable on gpui-kit 0.8\n12:00:04  INFO  theme cycled; unset colours re-derived",
+                "12:00:01  INFO  geometry skin installed\n12:00:02  DEBUG  gap 8px · radius 10px · splitter 6px\n12:00:03  WARN  v_split gaps need the gpui-base panel-axis fix\n12:00:04  INFO  theme cycled; unset colours re-derived",
                 cx,
             )
         });
@@ -338,7 +340,7 @@ impl Render for DockGeometryDemo {
                     .border_color(colors.status_bar_border)
                     .text_size(px(11.))
                     .child(format!(
-                        "Lace 0.9.7 · preset: {} · theme: {} · gaps: horizontal only",
+                        "Lace 0.9.7 · preset: {} · theme: {} · gaps: dock regions + split seams",
                         preset.label(),
                         self.theme_name
                     ))

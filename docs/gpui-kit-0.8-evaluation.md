@@ -351,10 +351,11 @@ hook. That chrome and its `SkinShared` are private
 (`gpui-component/src/dock/dock.rs:69-91, 114-153`).
 
 **Impact:** seam splitters follow `SplitterStyle`; dock-edge handles stay
-stock. The showcase screenshot confirmed the visible bar at the bottom seam is
-the stock hover pill, not the geometric splitter. Spec open question 3
-(dock-edge handles adopt the splitter style) cannot be answered without a base
-change or reimplementing the dock chrome.
+stock. The region gap described in D20 is a separate channel and does not
+change that handle. The showcase screenshot confirmed the visible bar at the
+bottom seam is the stock hover pill, not the geometric splitter. Spec open
+question 3 (dock-edge handles adopt the splitter style) cannot be answered
+without a base change or reimplementing the dock chrome.
 
 ### D19 — Percent and inset splitter lengths do resolve in 0.8
 
@@ -371,6 +372,26 @@ inset-visual     5.6 x 524.8   (588.8 - 16 - 48)
 The probe ran at a 0.933 device scale; the 45% ratio and the 64 px subtraction
 are exact. This closes the last medium-confidence item in the original audit.
 
+### D20 — Inter-dock gaps are skin-only, via flex `gap` on base's frames
+
+**Verified by execution.** The area frame is base's flex row (left/centre/right)
+and the centre frame is its flex column (centre tree/bottom dock). Applying
+`gap(width)` to those frames spaces the dock regions, and `padding(outer)` on
+the area frame makes the outside inset. Painting both frames with the gap
+colour backs the channels. A temporary run with a left dock open and closed and
+the bottom Logs dock showed:
+
+- a vertical channel between the left dock and the centre;
+- a horizontal channel between the centre and Logs;
+- the outer inset around the whole arrangement;
+- no stray gap when the left dock was closed (the empty closed-dock child did
+  not contribute a visible flex gap).
+
+**Impact:** the earlier “gaps are per split seam” limitation was too narrow.
+Only split seams *inside* a region need the `ResizablePanel` axis fix; dock
+region boundaries, including the Logs dock, do not. `/src/geometry.rs` now uses
+the area and centre frame hooks for this.
+
 ---
 
 ## 5. Confidence
@@ -379,6 +400,7 @@ are exact. This closes the last medium-confidence item in the original audit.
 |-------|-------|------------|
 | Horizontal margin gap works | Measured | High |
 | Vertical margin gap fails | Measured | High |
+| Inter-dock gaps via frame flex gap work | Measured, left dock open/closed + Logs | High |
 | Panel-row + forced `size_full` is the cause | Source + measurement | High |
 | Axis-aligned panel direction fixes it | Verified in a synthetic panel | High; still needs a real-tree two-axis test |
 | Effect layer is impossible | Source composition | High |
@@ -459,6 +481,7 @@ stock renderer delegated for everything the geometry does not own.
 | Style surface and defaults | 5 unit tests in `src/geometry.rs` |
 | Compiles across all targets | `cargo check --features gpui-kit --all-targets` |
 | Horizontal gap, outer padding | Temporary layout probe |
+| Inter-dock gaps | Demo run with a temporary left dock, open and closed, plus the Logs dock |
 | Percent length | Temporary layout probe (D19) |
 | Insets length | Temporary layout probe (D19) |
 | Real window renders without panic | Ran `dock_geometry` for 8 s |
@@ -472,6 +495,12 @@ never enabled.
 
 - Three groups with rounded corners and a 1 px themed outline.
 - Two interior seams with real gaps, each centred on the splitter band.
+- A vertical channel above the Logs dock, created by the centre frame's flex
+  gap rather than by split margins.
+- A vertical channel between a temporary left dock and the centre; removing
+  the left dock left no stray gap.
+- An outer inset between the whole arrangement and the window frame, painted
+  with the gap colour.
 - A 45%-length, 6 px, rounded splitter at the seam in the Flagship preset.
 - The same splitter at 60% and 3 px in Minimal.
 - The capture caught the live switch from Flagship to Minimal, which is
@@ -491,6 +520,9 @@ never enabled.
   frame at `900 - 2 * 5.6` with `p(6)` on the area.
 - New D17 and D18 came out of writing the skin, not out of the source audit.
 - D19 closed the percent/inset question.
+- D20 overturned the earlier “gaps are per split seam” limitation: dock-region
+  gaps are flex space on base's own frames and need no panel patch. Only a
+  vertical split *inside* a region still needs the panel-axis fix.
 
 ### 8.4 Cleanup
 

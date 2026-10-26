@@ -81,8 +81,8 @@ use lace_gpui::geometry::{
 };
 
 let style = DockGeometryStyle::new()
-    .gap(px(8.))                       // 4 px inset on each interior side
-    .gap_outer(px(6.))                 // padding around the whole area
+    .gap(px(8.))                       // split margins + inter-dock channels
+    .gap_outer(px(6.))                 // inset from the window frame
     .panel_radius(px(10.))
     .outline(OutlineStyle::themed(px(1.)))
     .shadow(ShadowSpec::new(black().alpha(0.35), point(px(0.), px(3.)), px(12.)))
@@ -98,7 +98,8 @@ skin.set_panel_effect(panel_id, effect, cx);             // per-panel override
 ```
 
 `examples/dock_geometry.rs` is the showcase — an `h_split` of three groups,
-three presets, live theme cycling, and a per-panel glow toggle:
+a bottom Logs dock, three presets, live theme cycling, and a per-panel glow
+toggle:
 
 ```sh
 cargo run --example dock_geometry --features gpui-kit
@@ -107,23 +108,30 @@ cargo run --example dock_geometry --features gpui-kit
 What 0.8 can and cannot express here, in short (the full audit is in
 [`docs/gpui-kit-0.8-feasibility.md`](docs/gpui-kit-0.8-feasibility.md)):
 
-- **Exact:** rounded panels, gap colour, splitter thickness, outline, rounded
-  caps, and splitter length in all three modes.
+- **Exact:** rounded panels, gap colour, gap width across dock regions and the
+  outer frame, splitter thickness, outline, rounded caps, and splitter length
+  in all three modes.
 - **Percent and inset splitter lengths** were verified by a layout probe
   (45% of a 588.8 px band → 265.6 px; insets 16/48 → 524.8 px).
 - **Effects** are the group frame's own `BoxShadow`, not a separate unclipped
   layer: base clips the element the frame hook returns, so that is the only
   place a shadow can live. Paint order still keeps it in the gap.
-- **Gaps are horizontal.** `ResizablePanel` is always a row and base forces the
-  group to `size_full()`, so vertical margins overflow instead of shrinking.
-  Vertical splits keep every other feature.
-- **Gaps are per split seam.** The boundary between a dock and the centre is
-  not a `PaneTree` split, so it keeps base's adjacency; only split trees inside
-  one region are inset.
-- **Gaps wider than 9 px** leave inert strips at the edges: the hit band is
-  still a base-owned `pub(crate)` constant.
+- **Dock-region gaps work on both axes.** The area frame is a flex row and the
+  centre frame is a flex column, so their own `gap` spaces left/centre/right
+  and centre/Logs without touching panel geometry. `gap_outer` pads the area
+  against the window frame. This is what closes the Logs gap.
+- **Split gaps inside a region are horizontal.** `ResizablePanel` is always a
+  row and base forces the group to `size_full()`, so vertical split margins
+  overflow instead of shrinking. This only affects a `v_split` between panels
+  in one region; it needs the gpui-base panel-axis fix. Inter-dock vertical
+  gaps are already handled by the centre frame's flex gap.
+- **Gaps wider than 9 px** leave inert strips at split seams: the hit band is
+  still a base-owned `pub(crate)` constant. Dock-region gaps are flex space,
+  so they are not part of a hit band; the dock-edge handle stays at the dock
+  edge.
 - **Dock-edge resize handles** keep the stock appearance; `DockSkin` owns that
   chrome and its shared handle is private, so there is no hook to restyle it.
+  The gap is a separate channel from the handle paint.
 
 `examples/dump_tokens.rs` needs no features and no display: it prints all 16
 themes' enforced `Tokens` (79 colours + 7 geometry values + spec knobs) as

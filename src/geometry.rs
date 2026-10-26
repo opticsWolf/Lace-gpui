@@ -14,17 +14,22 @@
 //!    paints drop shadows outside the element's own content mask) and is
 //!    overpainted by the next sibling's chrome, so the visual guarantee holds;
 //!    only the layer plumbing differs.
-//! 2. **Gaps are horizontal.** `ResizablePanel` is a row in 0.8 regardless of
-//!    the split axis, and base forces the group frame to `size_full()` after
-//!    the hook. Horizontal margins therefore shrink (flex-shrink), vertical
-//!    ones overflow. Gaps are applied to the left/right of a group whose
-//!    parent is a horizontal split; vertical seams keep the splitter paint and
-//!    lose only the inset until gpui-base makes the panel direction follow the
-//!    axis.
+//! 2. **Split margins are horizontal.** `ResizablePanel` is a row in 0.8
+//!    regardless of the split axis, and base forces the group frame to
+//!    `size_full()` after the hook. Horizontal margins therefore shrink
+//!    (flex-shrink), vertical ones overflow. Margins are applied to the
+//!    left/right of a group whose parent is a horizontal split; vertical split
+//!    seams keep the splitter paint and lose only the inset until gpui-base
+//!    makes the panel direction follow the axis.
 //!
-//! Gaps live at split seams inside one region. The boundary between a dock and
-//! the centre is not a `PaneTree` split, so it keeps base's adjacency; only
-//! the split tree itself is inset.
+//! Gaps exist at two levels. **Split seams** inside one region are inset by
+//! group margins, so their vertical half is blocked by the panel direction.
+//! **Dock regions** — left/right/centre and the bottom dock — are children of
+//! the area row and the centre column; those frames are flex containers, so
+//! their own `gap` creates both horizontal and vertical channels without
+//! touching panel geometry. The same colour and width back both, and
+//! [`DockGeometryStyle::gap_outer`] pads the area frame for the inset between
+//! the docks and the window frame.
 //!
 //! Everything else is a direct port: rounded frames (F1), gap colour (F3),
 //! splitter thickness (F4), panel outline (F5), shortened splitters (F7) and
@@ -84,22 +89,25 @@ impl DockGeometryStyle {
         Self::default()
     }
 
-    /// Visual gap between neighbouring panels, in pixels. The inset each side
-    /// gets is half of this. Default `px(0.)`.
+    /// Visual gap between neighbouring panels and between dock regions, in
+    /// pixels. A split seam insets each side by half of this; dock-region
+    /// channels use the full value through the area and centre frames. The
+    /// same width applies on both axes. Default `px(0.)`.
     pub fn gap(mut self, width: Pixels) -> Self {
         self.gap.width = width;
         self
     }
 
-    /// Colour behind the gap. `None` keeps the theme's tab-bar token, which is
-    /// what the stock skin paints.
+    /// Colour behind every gap. `None` keeps the theme's tab-bar token, which
+    /// is what the stock skin paints.
     pub fn gap_background(mut self, color: Hsla) -> Self {
         self.gap.background = Some(color);
         self
     }
 
-    /// Breathing inset around the whole dock area, applied as padding on the
-    /// area frame. Default `px(0.)`.
+    /// Breathing inset around the whole dock area, between the outer dock
+    /// panels and the window frame. Applied as padding on the area frame, so
+    /// the same gap colour backs it. Default `px(0.)`.
     pub fn gap_outer(mut self, inset: Pixels) -> Self {
         self.gap.outer = inset;
         self
@@ -136,8 +144,9 @@ impl DockGeometryStyle {
     }
 }
 
-/// Gap geometry. The width is halved across a seam, so both neighbours
-/// contribute `width / 2` and the visible gap is exactly `width`.
+/// Gap geometry. A split uses half of `width` on each interior side; a
+/// dock-region boundary uses the whole `width` as a flex gap; `outer` is the
+/// padding between the outer docks and the window frame.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GapStyle {
     pub width: Pixels,
@@ -433,10 +442,11 @@ impl SplitterColors {
 
 /// Which sides of a group sit on an interior seam.
 ///
-/// `top`/`bottom` are computed but not yet applied: gpui-kit 0.8 cannot shrink
-/// a `size_full()` group on the cross axis (see the module docs). Keeping them
-/// on the type means the margin pass is a one-line change once base makes
-/// `ResizablePanel` follow its axis.
+/// `top`/`bottom` are computed but not yet applied to split margins: gpui-kit
+/// 0.8 cannot shrink a `size_full()` group on the cross axis (see the module
+/// docs). Dock-region gaps do not use these sides; they come from the area and
+/// centre frames' own flex gaps. Keeping them on the type means the split-margin
+/// pass is a one-line change once base makes `ResizablePanel` follow its axis.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct GroupSides {
     pub left: bool,
@@ -591,9 +601,20 @@ impl DockAreaRenderer for GeometryDockSkin {
     fn frame(&self, window: &mut Window, cx: &mut App) -> Stateful<Div> {
         // `gap.outer` is padding on the area frame: base applies `size_full`,
         // `flex_row` and `overflow_hidden` around this element, so padding
-        // shrinks the content box without fighting the layout.
-        let outer = self.style.borrow().gap.outer;
-        self.inner.frame(window, cx).p(outer)
+        // shrinks the content box without fighting the layout. The frame is
+        // also the row that holds left/center/right, so its own flex gap is
+        // the inter-dock channel; painting it with the gap colour backs both
+        // that channel and the outer padding.
+        let style = *self.style.borrow();
+        let frame = self
+            .inner
+            .frame(window, cx)
+            .gap(style.gap.width)
+            .p(style.gap.outer);
+        match style.gap.background {
+            Some(color) => frame.bg(color),
+            None => frame.bg(cx.theme().tokens.tab_bar),
+        }
     }
 
     fn split_frame(
@@ -612,7 +633,15 @@ impl DockAreaRenderer for GeometryDockSkin {
     }
 
     fn center_frame(&self, window: &mut Window, cx: &mut App) -> Stateful<Div> {
-        self.inner.center_frame(window, cx)
+        // Base lays this out as a column: the centre tree, then the bottom
+        // dock. A flex gap here is the bottom-dock channel; the centre tree
+        // absorbs it because it carries `flex_1`.
+        let style = *self.style.borrow();
+        let frame = self.inner.center_frame(window, cx).gap(style.gap.width);
+        match style.gap.background {
+            Some(color) => frame.bg(color),
+            None => frame.bg(cx.theme().tokens.tab_bar),
+        }
     }
 
     fn render_split_handle(

@@ -19,15 +19,17 @@ steps — is in [`gpui-kit-0.8-evaluation.md`](gpui-kit-0.8-evaluation.md).
 
 - **The capabilities are mostly buildable**, but only as an **application-side
   skin**, not as the component-crate API the spec proposes.
-- **5 of 8 requirements are exact** with a custom `DockAreaRenderer` +
-  `TabGroupRenderer` (F1, F3, F4, F5, F8).
-- **F7 is proven for fixed pixel lengths**; percent and insets are expressible
-  but unexercised by 0.8's own skin and need a short spike.
+- **6 of 8 requirements are exact** with a custom `DockAreaRenderer` +
+  `TabGroupRenderer` (F1, F3, F4, F5, F7, F8).
+- **F7 works in all three modes**: fixed pixels, percent and insets were all
+  measured in the implementation probe (D19).
 - **F6 works, but not as specified:** effects must be the group frame's own
   `BoxShadow`; there is no unclipped "effect layer" available.
-- **F2 is half-blocked:** horizontal gaps work today; vertical gaps do not,
-  because `ResizablePanel` is unconditionally a row. A very small base change
-  fixes it.
+- **F2 works between dock regions on both axes**: the area and centre frames
+  are flex containers, so their own `gap` gives left/right/centre/Logs
+  channels, and area padding gives the outside inset. Split seams inside one
+  region still only get horizontal margins, because `ResizablePanel` is
+  unconditionally a row. A very small base change fixes that last case.
 - **The public API in chapter 6 does not exist at all** — no `Dock`, no
   `DockGeometryStyle`, no `with_geometry_style`. `Dock` is deliberately not
   re-exported by `gpui-component`.
@@ -41,12 +43,12 @@ steps — is in [`gpui-kit-0.8-evaluation.md`](gpui-kit-0.8-evaluation.md).
 | ID | Requirement | Status against 0.8 | Mechanism actually available |
 |----|-------------|--------------------|------------------------------|
 | F1 | Rounded dock panels | **Yes** | `.rounded(r)` on `TabGroupRenderer::frame`; base already applies `overflow_hidden`, so the tab bar and content clip |
-| F2 | Adjustable gap width | **Horizontal only** | `mx(gap/2)` on the group frame shrinks (main axis). `my(...)` overflows (cross axis). Needs a one-line base fix for vertical splits |
+| F2 | Adjustable gap width | **Both axes between dock regions; horizontal at split seams** | `gap()` on the area/centre frames spaces the dock regions in both directions. `mx(gap/2)` on a group frame shrinks split seams (main axis); `my(...)` still overflows (cross axis) and needs the one-line base fix |
 | F3 | Contrasting gap colour | **Yes** | `DockAreaRenderer::split_frame` background |
 | F4 | Separately adjustable splitter width | **Yes** | Custom appearance child with negative margin overhang, exactly as the stock pill does |
 | F5 | Panel outline, colour + width | **Yes** | Border on the group frame; painted after children and follows the radius |
 | F6 | Shadow / glow in the gap | **Yes, reduced form** | `Styled::shadow(vec![...])` on the group frame. Gap-safety comes from sibling paint order, but there is no separate layer and the granularity is the group |
-| F7 | Shortened splitters (pixels / percent / insets) | **Yes, with a spike** | Fixed pixels are proven; percent/insets are expressible inside the full-length band, but 0.8's own skin only exercises fixed lengths |
+| F7 | Shortened splitters (pixels / percent / insets) | **Yes** | Pixels, percent and insets were all measured in the implementation probe; each resolves against the full-length band |
 | F8 | Rounded splitter caps | **Yes** | Radius computed by the skin as `thickness / 2` |
 | — | Hit band wider than 9 px | **No** | `HANDLE_SIZE` and `HANDLE_PADDING` are `pub(crate)`; Phase 2 is real |
 | — | Per-panel effect overrides | **Group granularity** | A registry in the skin can key by active `PanelId`, but the styled surface is the group frame |
@@ -54,8 +56,9 @@ steps — is in [`gpui-kit-0.8-evaluation.md`](gpui-kit-0.8-evaluation.md).
 
 If the spec's exact architecture is the acceptance criterion, the count is
 **0 of 8 hooks changed / 0 of the proposed types present**. If the acceptance
-criterion is the visual result, it is **5 exact + 1 mostly + 1 reduced + 1
-half**, with one tiny base patch needed for the vertical half of F2.
+criterion is the visual result, it is **6 exact + 1 mostly + 1 reduced**, with
+one tiny base patch needed only for the vertical half of split-seam gaps.
+Dock-region and outer gaps need no base change.
 
 ---
 
@@ -426,8 +429,8 @@ split frame, splitter and tab-group frame.
 | Requirement | State | Notes |
 |---|---|---|
 | F1 rounded panels | Built | Radius on the group frame; base already clips it |
-| F2 gap width | Horizontal only | 8 px gap = `ml/mr(4)`; vertical sides stay computed but unapplied |
-| F3 gap colour | Built | `split_frame` background, theme tab-bar token when unset |
+| F2 gap width | Both axes between dock regions; horizontal at split seams | Area/centre flex gaps space the docks; `ml/mr(4)` handles split seams. Vertical split margins still need the panel-axis fix |
+| F3 gap colour | Built | `split_frame` background, plus the area/centre frame background for region/outer gaps; theme tab-bar token when unset |
 | F4 splitter thickness | Built | Overhang with negative margin, stock band untouched |
 | F5 panel outline | Built | Border on the group frame; themed colour by default |
 | F6 shadow / glow | Built, reduced form | `Styled::shadow` on the frame; no separate effect layer exists |
@@ -472,6 +475,15 @@ Two implementation-time findings:
    every frame, so a value snapshot freezes the style for groups already on
    screen. `GeometryDockSkin` shares the style and effect registry through
    `Rc<RefCell<…>>`, which is what makes `set_style` repaint existing groups.
+3. **Dock-region gaps do not need the panel-axis fix.** The area frame is
+   base's flex row and the centre frame is its flex column. Applying `gap()` to
+   those two frames spaces left/centre/right and centre/bottom dock; applying
+   `padding` to the area frame produces the outside inset. This gives the Logs
+   dock a vertical channel on unpatched 0.8. The panel-axis fix is only needed
+   for split seams *inside* a region, where the gap comes from tab-group
+   margins. Verified by running the demo with a temporary left dock open and
+   closed and with the bottom Logs dock: the region channels and the outer
+   inset are visible, and closing the left dock leaves no stray gap.
 
 ---
 
