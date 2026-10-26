@@ -24,6 +24,7 @@ lace-gpui = { version = "0.0.2", features = ["gpui-kit"] }
 | `contrast` | The rulebook and its fixer — port of `lace/theme_contrast.py` (`enforce`) | `color`, `engine` |
 | `themes` | 16 curated presets, dark-to-light, from `midnight` to `cyberpunk_neon` | `engine` |
 | `skin` | The bridge: `apply("dracula", cx)` paints a running gpui-kit app | gpui-kit 0.8 |
+| `geometry` | An application-side dock skin: gaps, rounded panels, outlines, shadow/glow and configurable splitters | gpui-kit 0.8 |
 
 The colour core and the engine have **zero dependencies**; only the `gpui-kit`
 feature pulls a crate.
@@ -64,6 +65,65 @@ and an accordion:
 ```sh
 cargo run --example widgets --features gpui-kit
 ```
+
+## The geometric dock
+
+`geometry::GeometryDockSkin` is an application-side port of
+`gpui-kit-geometric-dock-styling-spec.md` to the API gpui-kit 0.8 actually
+ships. It is a strict superset of the stock skin: every field defaults to
+today's look, and the tab bar, content padding, dock chrome, dock-edge
+resize handles and invalid-panel placeholder are delegated to `DockSkin`.
+
+```rust
+use lace_gpui::geometry::{
+    DockGeometryStyle, GeometryDockSkin, GlowSpec, OutlineStyle, ShadowSpec,
+    SplitterCap, SplitterLength,
+};
+
+let style = DockGeometryStyle::new()
+    .gap(px(8.))                       // 4 px inset on each interior side
+    .gap_outer(px(6.))                 // padding around the whole area
+    .panel_radius(px(10.))
+    .outline(OutlineStyle::themed(px(1.)))
+    .shadow(ShadowSpec::new(black().alpha(0.35), point(px(0.), px(3.)), px(12.)))
+    .glow(GlowSpec::new(accent.alpha(0.28), px(22.)))
+    .splitter(|s| s
+        .thickness(px(6.))
+        .length(SplitterLength::Percent(0.45))
+        .cap(SplitterCap::Rounded));
+
+let (area, skin) = GeometryDockSkin::dock_area("main", None, style, window, cx);
+skin.set_style(another_style, cx);                       // live restyle
+skin.set_panel_effect(panel_id, effect, cx);             // per-panel override
+```
+
+`examples/dock_geometry.rs` is the showcase — an `h_split` of three groups,
+three presets, live theme cycling, and a per-panel glow toggle:
+
+```sh
+cargo run --example dock_geometry --features gpui-kit
+```
+
+What 0.8 can and cannot express here, in short (the full audit is in
+[`docs/gpui-kit-0.8-feasibility.md`](docs/gpui-kit-0.8-feasibility.md)):
+
+- **Exact:** rounded panels, gap colour, splitter thickness, outline, rounded
+  caps, and splitter length in all three modes.
+- **Percent and inset splitter lengths** were verified by a layout probe
+  (45% of a 588.8 px band → 265.6 px; insets 16/48 → 524.8 px).
+- **Effects** are the group frame's own `BoxShadow`, not a separate unclipped
+  layer: base clips the element the frame hook returns, so that is the only
+  place a shadow can live. Paint order still keeps it in the gap.
+- **Gaps are horizontal.** `ResizablePanel` is always a row and base forces the
+  group to `size_full()`, so vertical margins overflow instead of shrinking.
+  Vertical splits keep every other feature.
+- **Gaps are per split seam.** The boundary between a dock and the centre is
+  not a `PaneTree` split, so it keeps base's adjacency; only split trees inside
+  one region are inset.
+- **Gaps wider than 9 px** leave inert strips at the edges: the hit band is
+  still a base-owned `pub(crate)` constant.
+- **Dock-edge resize handles** keep the stock appearance; `DockSkin` owns that
+  chrome and its shared handle is private, so there is no hook to restyle it.
 
 `examples/dump_tokens.rs` needs no features and no display: it prints all 16
 themes' enforced `Tokens` (79 colours + 7 geometry values + spec knobs) as
@@ -141,6 +201,8 @@ Non-colour knobs: `radius` ← `control_radius`, `radius_lg` ← `corner_radius`
 
 - `src/color.rs` — 14 unit tests: matrix round trips, gamut mapping keeping L
   and hue, WCAG reference values, hex parsing, mix/step/ensure_contrast.
+- `src/geometry.rs` — 5 unit tests: the stock-look defaults, splitter default
+  detection, side ownership per split axis, and shadow-then-glow stack order.
 - `tests/engine.rs` — 15 integration tests: every theme derives and has a
   unique token fingerprint; `is_light` per chassis; body / active-tab /
   muted / selection text floors; surface and hover separation; status

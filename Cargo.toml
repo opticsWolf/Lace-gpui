@@ -25,5 +25,9 @@ required-features = ["gpui-kit"]
 name = "widgets"
 required-features = ["gpui-kit"]
 
+[[example]]
+name = "dock_geometry"
+required-features = ["gpui-kit"]
+
 [profile.release]
 opt-level = 2

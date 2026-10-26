@@ -15,6 +15,8 @@
 //! - [`themes`] — 16 curated presets, from midnight to cyberpunk_neon.
 //! - [`skin`] *(feature `gpui-kit`)* — the bridge: `apply("dracula", cx)`
 //!   paints a running gpui-kit app with Lace's tokens.
+//! - [`geometry`] *(feature `gpui-kit`)* — an application-side dock skin:
+//!   gaps, rounded panels, outlines, shadow/glow and configurable splitters.
 //!
 //! ```
 //! // The colour core alone:
@@ -41,6 +43,9 @@ pub mod themes;
 
 #[cfg(feature = "gpui-kit")]
 pub mod skin;
+
+#[cfg(feature = "gpui-kit")]
+pub mod geometry;
 
 /// The Lace release this crate was ported from.
 pub const LACE_VERSION: &str = "0.9.7";
