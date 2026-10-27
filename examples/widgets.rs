@@ -51,7 +51,7 @@ use gpui_kit::component::{
     pagination::Pagination,
     popover::Popover,
     progress::{Progress, ProgressCircle},
-    radio::{Radio, RadioGroup},
+    radio::Radio,
     rating::Rating,
     select::{Select, SelectState},
     separator::Separator,
@@ -65,7 +65,8 @@ use gpui_kit::component::{
     tag::Tag,
     ActiveTheme, Disableable, Icon, IconName, IndexPath, Sizable, WindowExt,
 };
-use gpui_kit::gpui::{black, BoxShadow, Hsla, Pixels};
+use gpui_kit::gpui::{black, relative, rems, BoxShadow, FocusHandle, Hsla, Pixels};
+use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
 use lace_gpui::{
@@ -151,15 +152,152 @@ fn card_header(title: &'static str, description: &'static str, cx: &App) -> Div 
         )
 }
 
+/// A blurred accent halo.
+///
+/// `BoxShadow` is gpui's only blur primitive. With no offset and an accent
+/// colour it reads as a glow; the dark, offset sibling used by [`card`] and the
+/// chrome is elevation. A glow is the fitting treatment for hover, focus and
+/// selection; a shadow is for surfaces lifted off the canvas.
+fn soft_glow(color: Hsla, blur: f32, alpha: f32) -> BoxShadow {
+    BoxShadow::new(px(0.), px(0.), color.opacity(alpha)).blur_radius(px(blur))
+}
+
+/// Add a soft accent halo around a checked checkbox's indicator.
+///
+/// The overlay is transparent and has no pointer handlers, so the checkbox
+/// keeps its own click, focus and keyboard handling. The indicator sits at the
+/// row's top-left corner, 0.125 rem down.
+fn glow_checkbox(checkbox: Checkbox, checked: bool, cx: &App) -> Div {
+    let theme = cx.theme();
+    let radius = theme.radius.min(px(4.));
+    div().relative().child(checkbox).when(checked, |this| {
+        this.child(
+            div()
+                .absolute()
+                .top(rems(0.125))
+                .left(px(0.))
+                .size(rems(1.))
+                .rounded(radius)
+                .shadow(vec![soft_glow(theme.primary, 10.0, 0.32)]),
+        )
+    })
+}
+
+/// Whether the field's text handle is focused, or focus sits on a frame
+/// around it.
+///
+/// A click can focus the frame `Input` tracks rather than the text state's own
+/// handle, so `is_focused` alone misses a field that is plainly accepting
+/// keys. `within_focused` also accepts a focused ancestor.
+fn input_focused(state: &FocusHandle, window: &Window, cx: &mut App) -> bool {
+    state.within_focused(window, cx)
+}
+
+/// Add a soft accent halo to a focused input.
+fn soft_input(input: Input, state: &Entity<InputState>, window: &Window, cx: &mut App) -> Input {
+    let focus = state.read(cx).focus_handle(cx).clone();
+    if input_focused(&focus, window, cx) {
+        input.shadow(vec![soft_glow(cx.theme().primary, 16.0, 0.32)])
+    } else {
+        input
+    }
+}
+
+/// Add a soft accent halo to a focused multiline field.
+fn soft_textarea(
+    textarea: Textarea,
+    state: &Entity<TextareaState>,
+    window: &Window,
+    cx: &mut App,
+) -> Textarea {
+    let focus = state.read(cx).focus_handle(cx).clone();
+    if input_focused(&focus, window, cx) {
+        textarea.shadow(vec![soft_glow(cx.theme().primary, 16.0, 0.32)])
+    } else {
+        textarea
+    }
+}
+
+/// A slider whose thumb ring is replaced by a blurred halo.
+///
+/// gpui-kit grows the hover ring as a hard 3 px border. This cover is a
+/// border-only disc in the surface colour: its hole is exactly the thumb, its
+/// band hides the ring, and its shadow paints the halo outside. The cover has
+/// no background and no pointer handlers, so the thumb keeps its drag, click
+/// and keyboard handling. `surface` should be the solid colour behind the
+/// slider; the card's gradient moves by only a few lightness steps, so the
+/// band disappears into it.
+fn soft_slider(slider: Slider, percentage: f32, surface: Hsla, glow: Hsla) -> Div {
+    div()
+        .relative()
+        .w_full()
+        .group("soft-slider")
+        .child(slider)
+        .child(
+            div()
+                .absolute()
+                .top(px(3.))
+                .left(relative(percentage))
+                .ml(-px(12.))
+                .size(px(24.))
+                .rounded_full()
+                .border(px(4.))
+                .border_color(surface)
+                .shadow(vec![soft_glow(glow, 10.0, 0.40)]),
+        )
+}
+
 /// A soft accent halo around a primary action. The wrapper has the button's
-/// bounds, so the shadow lands outside it without changing the layout.
+/// bounds, so the glow lands outside it without changing the layout.
 fn action_glow(color: Hsla, radius: Pixels, button: impl IntoElement) -> Div {
     div()
         .rounded(radius)
-        .shadow(vec![
-            BoxShadow::new(px(0.), px(2.), color.opacity(0.28)).blur_radius(px(14.))
-        ])
+        .shadow(vec![soft_glow(color, 18.0, 0.28)])
         .child(button)
+}
+
+/// Cover a stock [`Radio`]'s check glyph with LaceStyle's dot.
+///
+/// gpui-kit's radio hard-codes the checkbox check icon. The overlay is only
+/// painted while the radio is checked: a 14 px inner disc hides the 12 px
+/// glyph, then a dot sits on top. The stock 1 px eyelet, its fill and its focus
+/// input stay in place, and the overlay has no pointer handlers, so the radio
+/// underneath keeps focus, keyboard and click handling. The stock eyelet is
+/// 1 rem with a 0.125 rem top inset; only the medium gallery controls use this.
+fn dot_radio(radio: Radio, checked: bool, disabled: bool, cx: &App) -> Div {
+    let theme = cx.theme();
+    let fill: gpui_kit::gpui::Background = if disabled {
+        theme.primary.opacity(0.5).into()
+    } else {
+        theme.tokens.primary.into()
+    };
+    let dot = theme
+        .primary_foreground
+        .opacity(if disabled { 0.5 } else { 1. });
+
+    div().relative().child(radio).when(checked, |this| {
+        this.child(
+            div()
+                .absolute()
+                .top(rems(0.125))
+                .left(px(0.))
+                .size(rems(1.))
+                .p(px(1.))
+                .when(!disabled, |this| {
+                    this.shadow(vec![soft_glow(theme.primary, 10.0, 0.32)])
+                })
+                .child(
+                    div()
+                        .size_full()
+                        .rounded_full()
+                        .bg(fill)
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(div().size(rems(0.375)).rounded_full().bg(dot)),
+                ),
+        )
+    })
 }
 
 /// A label + description on the left, a control on the right.
@@ -662,7 +800,32 @@ impl WidgetsApp {
         )
     }
 
-    fn sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    // -- controls ----------------------------------------------------------
+
+    fn density_radio(
+        &self,
+        index: usize,
+        label: &'static str,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let checked = self.density_mode == index;
+        dot_radio(
+            Radio::new(("density", index))
+                .label(label)
+                .checked(checked)
+                .on_change(cx.listener(move |this, _, _, cx| {
+                    if this.density_mode != index {
+                        this.density_mode = index;
+                        cx.notify();
+                    }
+                })),
+            checked,
+            false,
+            cx,
+        )
+    }
+
+    fn sidebar(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let background = cx.theme().tokens.sidebar;
         let border = cx.theme().sidebar_border;
         let muted = cx.theme().muted_foreground;
@@ -690,12 +853,15 @@ impl WidgetsApp {
                 black().opacity(if is_dark { 0.22 } else { 0.05 }),
             )
             .blur_radius(px(18.))])
-            .child(
+            .child(soft_input(
                 Input::new(&self.search)
                     .prefix(Icon::new(IconName::Search).small().text_color(muted))
                     .cleanable(true)
                     .w_full(),
-            )
+                &self.search,
+                window,
+                cx,
+            ))
             .child(
                 div()
                     .px_2()
@@ -784,10 +950,10 @@ impl WidgetsApp {
 
     // -- content shell -----------------------------------------------------
 
-    fn page(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn page(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         match self.page {
             0 => self.controls_page(cx).into_any_element(),
-            1 => self.forms_page(cx).into_any_element(),
+            1 => self.forms_page(window, cx).into_any_element(),
             2 => self.data_page(cx).into_any_element(),
             3 => self.feedback_page(cx).into_any_element(),
             _ => self.navigation_page(cx).into_any_element(),
@@ -854,7 +1020,7 @@ impl WidgetsApp {
             )
     }
 
-    fn content(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn content(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .flex_1()
             .min_w_0()
@@ -869,7 +1035,7 @@ impl WidgetsApp {
                     .min_h_0()
                     .overflow_y_scroll()
                     .p(px(24.))
-                    .child(self.page(cx)),
+                    .child(self.page(window, cx)),
             )
     }
 
@@ -919,6 +1085,8 @@ impl WidgetsApp {
         let muted = theme.muted_foreground;
         let border = theme.border;
         let primary = theme.primary;
+        let list = theme.colors.list;
+        let volume_pct = self.volume.read(cx).percentage().end;
 
         div()
             .flex()
@@ -1016,7 +1184,7 @@ impl WidgetsApp {
                             .child(
                                 col()
                                     .gap_3()
-                                    .child(
+                                    .child(glow_checkbox(
                                         Checkbox::new("check-newsletter")
                                             .checked(self.newsletter)
                                             .label("Receive the weekly theme digest")
@@ -1024,8 +1192,10 @@ impl WidgetsApp {
                                                 this.newsletter = *checked;
                                                 cx.notify();
                                             })),
-                                    )
-                                    .child(
+                                        self.newsletter,
+                                        cx,
+                                    ))
+                                    .child(glow_checkbox(
                                         Checkbox::new("check-analytics")
                                             .checked(self.analytics)
                                             .label("Share anonymous usage analytics")
@@ -1033,29 +1203,18 @@ impl WidgetsApp {
                                                 this.analytics = *checked;
                                                 cx.notify();
                                             })),
-                                    )
+                                        self.analytics,
+                                        cx,
+                                    ))
                                     .child(
                                         Checkbox::new("check-disabled")
                                             .label("Enterprise audit log")
                                             .disabled(true),
                                     )
                                     .child(div().h(px(1.)).bg(border))
-                                    .child(
-                                        RadioGroup::new("density-group")
-                                            .selected_index(Some(self.density_mode))
-                                            .on_change(cx.listener(|this, index, _, cx| {
-                                                this.density_mode = *index;
-                                                cx.notify();
-                                            }))
-                                            .child(Radio::new("density-compact").label("Compact"))
-                                            .child(
-                                                Radio::new("density-comfortable")
-                                                    .label("Comfortable"),
-                                            )
-                                            .child(
-                                                Radio::new("density-spacious").label("Spacious"),
-                                            ),
-                                    ),
+                                    .child(self.density_radio(0, "Compact", cx))
+                                    .child(self.density_radio(1, "Comfortable", cx))
+                                    .child(self.density_radio(2, "Spacious", cx)),
                             ),
                     )
                     .child(
@@ -1151,7 +1310,12 @@ impl WidgetsApp {
                                                     .child("drag the thumb"),
                                             ),
                                     )
-                                    .child(Slider::new(&self.volume).accessibility_label("Volume")),
+                                    .child(soft_slider(
+                                        Slider::new(&self.volume).accessibility_label("Volume"),
+                                        volume_pct,
+                                        list,
+                                        primary,
+                                    )),
                             )
                             .child(
                                 col()
@@ -1232,7 +1396,7 @@ impl WidgetsApp {
 
     // -- page: forms -------------------------------------------------------
 
-    fn forms_page(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn forms_page(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let muted = cx.theme().muted_foreground;
         let primary = cx.theme().primary;
         let radius = cx.theme().radius;
@@ -1255,19 +1419,34 @@ impl WidgetsApp {
                                 Field::new()
                                     .label("Full name")
                                     .description("Shown on your profile.")
-                                    .child(Input::new(&self.name)),
+                                    .child(soft_input(
+                                        Input::new(&self.name),
+                                        &self.name,
+                                        window,
+                                        cx,
+                                    )),
                             )
                             .child(
                                 Field::new()
                                     .label("Email")
                                     .description("Used for sign-in.")
-                                    .child(Input::new(&self.email)),
+                                    .child(soft_input(
+                                        Input::new(&self.email),
+                                        &self.email,
+                                        window,
+                                        cx,
+                                    )),
                             )
                             .child(
                                 Field::new()
                                     .label("Password")
                                     .description("Masked by the input state.")
-                                    .child(Input::new(&self.password)),
+                                    .child(soft_input(
+                                        Input::new(&self.password),
+                                        &self.password,
+                                        window,
+                                        cx,
+                                    )),
                             )
                             .child(
                                 Field::new()
@@ -1310,14 +1489,24 @@ impl WidgetsApp {
                                 Field::new()
                                     .label("Clipboard")
                                     .description("A read-only field.")
-                                    .child(Input::new(&self.readonly).readonly(true)),
+                                    .child(soft_input(
+                                        Input::new(&self.readonly).readonly(true),
+                                        &self.readonly,
+                                        window,
+                                        cx,
+                                    )),
                             )
                             .child(
                                 Field::new()
                                     .label("Notes")
                                     .description("Multi-line input with a fixed height.")
                                     .col_span(2)
-                                    .child(Textarea::new(&self.notes).h(px(104.))),
+                                    .child(soft_textarea(
+                                        Textarea::new(&self.notes).h(px(104.)),
+                                        &self.notes,
+                                        window,
+                                        cx,
+                                    )),
                             )
                             .footer(
                                 row()
@@ -2212,7 +2401,7 @@ impl WidgetsApp {
 }
 
 impl Render for WidgetsApp {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let background = theme.tokens.background;
         let foreground = theme.foreground;
@@ -2230,8 +2419,8 @@ impl Render for WidgetsApp {
                     .flex_1()
                     .min_h_0()
                     .flex()
-                    .child(self.sidebar(cx))
-                    .child(self.content(cx)),
+                    .child(self.sidebar(window, cx))
+                    .child(self.content(window, cx)),
             )
             .child(self.status_bar(cx))
     }

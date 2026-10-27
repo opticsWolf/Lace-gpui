@@ -69,10 +69,13 @@ cargo run --example widgets --features gpui-kit
 ```
 
 The gallery starts with `WidgetStyle::LaceBase`: LaceStyle's flat outlines,
-`+0.04` hover and `+0.08` pressed steps, accent focus ring, scrollbar and
-slider mixes, plus a shallow vertical sheen on faces, tabs and large surfaces,
-a progress sweep, soft card/header shadows and accent halos around primary
-actions. The **Lace style / Theme only** button in the title strip toggles the
+`+0.04` hover and `+0.08` pressed steps, full-strength accent ring (1 px edge;
+the hard 3 px band stays off), scrollbar and
+slider mixes, plus a shallow vertical sheen on faces (stronger on hover,
+inset on press), tabs and large surfaces,
+a progress sweep, soft card/header shadows, blurred accent halos around primary
+actions, focused inputs, checked checkboxes and the slider thumb, and a radio
+dot overlay (stock `Radio` hard-codes the check glyph). The **Lace style / Theme only** button in the title strip toggles the
 widget layer live, and the theme arrows keep the selected layer. The mapping
 and gpui-kit's structural limits are in
 [docs/lace-style-widgets.md](docs/lace-style-widgets.md).

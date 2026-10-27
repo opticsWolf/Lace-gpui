@@ -13,8 +13,11 @@
 //! top: gpui-kit tokens carry a renderable `Background`, so faces, tabs,
 //! headers and thumbs can take a small vertical sheen, progress can sweep
 //! horizontally, and saturated accent faces only shade away from their label.
-//! The gallery adds soft app-side shadows and accent glows where the theme
-//! surface has no shadow slot.
+//! Hover and pressed faces get a stronger sheen than resting ones. gpui-kit's
+//! 3 px focus band is switched off because the renderer cannot blur it; focus
+//! falls back to a 1 px accent-tinted edge, and the gallery adds a soft
+//! app-side glow around the focused control. The gallery also supplies the
+//! soft shadows and accent halos where the theme surface has no shadow slot.
 //!
 //! The derivation is pure — [`BaseStyle::from_tokens`] and
 //! [`BaseStyle::from_spec`] need no gpui context. [`BaseStyle::apply`] is the
@@ -61,6 +64,12 @@ const POPUP_RADIUS_BLEND: f32 = 1.0 / 3.0;
 /// `_BASIC_CLASSIC_OUTLINE`: at or below this strength the classic chassis
 /// holds its outlines to the low border floor (1.15:1).
 pub const CLASSIC_OUTLINE_STRENGTH: f64 = 0.1;
+/// Share of the non-text UI floor used for the shared field/indicator outline.
+///
+/// 1 px at the full 3:1 floor reads as a hard line around a checkbox, radio or
+/// field. The base layer keeps it findable at 80% of that floor (2.4:1 on the
+/// normal contrast level): still clearly visible, but no longer a bright edge.
+pub const INDICATOR_FLOOR_SCALE: f64 = 0.8;
 
 // ---------------------------------------------------------------------------
 // Depth
@@ -94,6 +103,17 @@ pub const SURFACE_SHADE: f64 = 0.006;
 pub const THUMB_LIFT: f64 = 0.014;
 /// Bottom shade of a thumb.
 pub const THUMB_SHADE: f64 = 0.014;
+/// Hover faces carry more relief than at rest, so the state change reads as a
+/// lit surface rather than a flat colour swap.
+pub const STATE_FACE_LIFT: f64 = 0.018;
+/// Bottom shade of a hovered neutral face.
+pub const STATE_FACE_SHADE: f64 = 0.022;
+/// Inset depth of a pressed neutral face.
+pub const STATE_INSET: f64 = 0.014;
+/// Top lift of a hovered saturated face whose label is dark.
+pub const STATE_ACCENT_LIFT: f64 = 0.012;
+/// Bottom shade of a hovered or pressed saturated face whose label is light.
+pub const STATE_ACCENT_SHADE: f64 = 0.016;
 
 /// LaceStyle's widget-level rules, derived from one [`Tokens`] palette.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -131,15 +151,34 @@ pub struct BaseStyle {
     pub button_active: Rgba,
     /// Outline of an unfocused button.
     pub button_outline: Rgba,
-    /// Outline of an unfocused input field.
+    /// Outline of an unfocused input field, held to the border floor.
+    ///
+    /// Kept and documented even though gpui-kit gives fields and indicators
+    /// the same `ThemeColor::input` slot; see [`Self::indicator_outline_color`].
     pub field_outline_color: Rgba,
+    /// Outline of an unchecked checkbox or radio, held to 80% of
+    /// [`BaseStyle::ui_ratio`].
+    ///
+    /// This is the value fed to the shared `ThemeColor::input` slot, so the
+    /// indicators and field edges stay findable at gpui's fixed 1 px width
+    /// without becoming a hard, bright line.
+    pub indicator_outline_color: Rgba,
+    /// Opaque outline for cards, frames and structural dividers.
+    ///
+    /// Replaces the palette's translucent border so a 1 px line does not
+    /// composite away against the surface.
+    pub frame_outline_color: Rgba,
     /// Accent, as used for a default button's face and a slider's fill.
     pub accent: Rgba,
     /// Accent face on hover.
     pub accent_hover: Rgba,
     /// Accent face while pressed.
     pub accent_active: Rgba,
-    /// Accent focus ring, held to [`BaseStyle::ui_ratio`].
+    /// Accent focus ring at full strength, held to [`BaseStyle::ui_ratio`].
+    ///
+    /// [`BaseStyle::apply`] writes the full-strength colour to the theme for
+    /// the 1 px tinted edge; gpui-kit's hard 3 px band stays off and the
+    /// gallery supplies the soft halo.
     pub focus_ring: Rgba,
     /// Faint scrollbar track, shown when a bar expands.
     pub scrollbar_track: Rgba,
@@ -245,14 +284,16 @@ impl BaseStyle {
         control_radius: f64,
         corner_radius: f64,
     ) -> Self {
-        let surface = t.canvas_bg;
+        let canvas = t.canvas_bg;
+        let panel = t.panel_bg;
         let button = t.button_bg;
         let accent = t.accent_color;
         let border_ratio = contrast_target(Role::Border, outline_level);
         let ui_ratio = contrast_target(Role::Ui, contrast);
         let stroke = |fill: Rgba| color::mix(fill, t.text, t.outline_strength);
-        let legible = |c: Rgba, ratio: f64| color::ensure_contrast(c, surface, ratio);
-        let mix_text = |amount: f64| color::mix(surface, t.text, amount);
+        let legible_on =
+            |c: Rgba, surface: Rgba, ratio: f64| color::ensure_contrast(c, surface, ratio);
+        let mix_text = |amount: f64| color::mix(canvas, t.text, amount);
 
         let control_radius = control_radius.max(0.0) as f32;
         let corner_radius = corner_radius.max(0.0) as f32;
@@ -273,15 +314,25 @@ impl BaseStyle {
             button,
             button_hover: color::step_contrast(button, HOVER_STEP),
             button_active: color::step_contrast(button, PRESS_STEP),
-            button_outline: legible(stroke(button), border_ratio),
-            field_outline_color: legible(stroke(t.input_bg), border_ratio),
+            button_outline: legible_on(stroke(button), panel, border_ratio),
+            field_outline_color: legible_on(stroke(t.input_bg), panel, border_ratio),
+            // LaceStyle draws unchecked indicators at the non-text UI floor,
+            // not the border floor: they are 1 px and have to stay findable.
+            // The base layer backs that off by 20% so the opaque line is a
+            // control edge, not a hard glow.
+            indicator_outline_color: legible_on(
+                stroke(t.input_bg),
+                panel,
+                ui_ratio * INDICATOR_FLOOR_SCALE,
+            ),
+            frame_outline_color: legible_on(stroke(panel), panel, border_ratio),
             accent,
             accent_hover: color::step_contrast(accent, HOVER_STEP),
             accent_active: color::step_contrast(accent, PRESS_STEP),
-            focus_ring: legible(accent, ui_ratio),
+            focus_ring: legible_on(accent, panel, ui_ratio),
             scrollbar_track: mix_text(SCROLLBAR_TRACK),
-            scrollbar_thumb: legible(mix_text(SCROLLBAR_REST), ui_ratio),
-            scrollbar_thumb_hover: legible(mix_text(SCROLLBAR_HOVER), ui_ratio),
+            scrollbar_thumb: legible_on(mix_text(SCROLLBAR_REST), canvas, ui_ratio),
+            scrollbar_thumb_hover: legible_on(mix_text(SCROLLBAR_HOVER), canvas, ui_ratio),
             slider_thumb: button,
         }
     }
@@ -293,11 +344,32 @@ impl BaseStyle {
     /// layer and refresh windows; [`crate::skin::apply_spec_styled`] does
     /// both.
     pub fn apply(&self, theme: &mut Theme, source: &Tokens) {
+        // LaceStyle's widget frames use one opaque stroke. The palette's
+        // translucent border is the dock-chrome value; used on a widget it
+        // composites down to a line that may as well not be there. Feed the
+        // opaque frame to every structural border instead.
+        let frame = hsla(self.frame_outline_color);
+        theme.colors.border = frame;
+        theme.colors.window_border = frame;
+        theme.colors.sidebar_border = frame;
+        theme.colors.title_bar_border = frame;
+        theme.colors.status_bar_border = frame;
+        theme.colors.table_row_border = frame;
+
+        // gpui-kit shares one `input` slot across fields, default buttons and
+        // unchecked indicators. LaceStyle lifts indicators to the 3:1 UI floor
+        // but fields only to the border floor; with one slot available the
+        // indicator wins, because a 1 px box cannot afford a 1.15:1 line.
+        // The derived value is already backed off by `INDICATOR_FLOOR_SCALE`.
         theme.colors.input = if self.field_outline {
-            hsla(self.field_outline_color)
+            hsla(self.indicator_outline_color)
         } else {
-            theme.colors.border
+            frame
         };
+        // The ring is the full, contrast-checked accent. Focus does not use
+        // gpui-kit's 3 px band (see `focus_ring` below), so this colour is
+        // drawn as the 1 px tinted edge and as the gallery's glow source.
+        // `drag_border` stays opaque for the dock's resize handles.
         theme.colors.ring = hsla(self.focus_ring);
         theme.colors.drag_border = hsla(self.focus_ring);
 
@@ -354,39 +426,51 @@ impl BaseStyle {
         // also shapes the dark input fill (`input.mix(transparent, 0.3)`).
         theme.radius = px(self.control_radius);
         theme.radius_lg = px(self.corner_radius);
-        theme.focus_ring = self.focus_width > 0.0;
+        // LaceStyle's focus ring is `focus_width` pixels of accent. gpui-kit
+        // draws the same idea as a hard 3 px band with no blur, which reads as
+        // a bright outline rather than a glow. Keep the theme's 1 px tinted
+        // edge fallback and leave the soft halo to the application; the
+        // gallery adds one around focused fields and controls.
+        theme.focus_ring = false;
 
         // Solid tokens first, then the depth layer: every background below
         // keeps its token's representative `color` for text and icons.
         theme.tokens = ThemeTokens::from(&theme.colors);
         let tokens = &mut theme.tokens;
 
-        // Neutral button faces.
+        // Neutral button faces. Resting faces stay quiet; hover and press get
+        // a stronger sheen so a state change is visible at a glance.
         let face = raised(self.button, FACE_LIFT, FACE_SHADE);
         tokens.button.background = face;
         tokens.button_secondary.background = face;
         tokens.secondary.background = raised(self.button, HEADER_LIFT, HEADER_SHADE);
-        let hover = raised(self.button_hover, FACE_LIFT, FACE_SHADE);
+        let hover = raised(self.button_hover, STATE_FACE_LIFT, STATE_FACE_SHADE);
         tokens.button_hover.background = hover;
         tokens.button_secondary_hover.background = hover;
-        tokens.secondary_hover.background = raised(self.button_hover, HEADER_LIFT, HEADER_SHADE);
-        let active = inset(self.button_active, INSET_TOP, INSET_BOTTOM);
+        tokens.secondary_hover.background = hover;
+        let active = inset(self.button_active, STATE_INSET, STATE_INSET);
         tokens.button_active.background = active;
         tokens.button_secondary_active.background = active;
-        tokens.secondary_active.background = raised(self.button_active, HEADER_LIFT, HEADER_SHADE);
+        tokens.secondary_active.background = active;
 
         // Accent faces and the accent wash behind checkboxes, radios and
         // switch tracks.
         tokens.button_primary.background = accent_face(self.accent, ACCENT_LIFT, ACCENT_SHADE);
         tokens.button_primary_hover.background =
-            accent_face(self.accent_hover, ACCENT_LIFT, ACCENT_SHADE);
+            accent_face(self.accent_hover, STATE_ACCENT_LIFT, STATE_ACCENT_SHADE);
         tokens.button_primary_active.background =
-            accent_face(self.accent_active, ACCENT_LIFT, ACCENT_SHADE);
+            accent_face(self.accent_active, STATE_ACCENT_LIFT, STATE_ACCENT_SHADE);
         tokens.primary.background = accent_face(self.accent, ACCENT_LIFT * 0.5, ACCENT_SHADE * 0.5);
-        tokens.primary_hover.background =
-            accent_face(self.accent_hover, ACCENT_LIFT * 0.5, ACCENT_SHADE * 0.5);
-        tokens.primary_active.background =
-            accent_face(self.accent_active, ACCENT_LIFT * 0.5, ACCENT_SHADE * 0.5);
+        tokens.primary_hover.background = accent_face(
+            self.accent_hover,
+            STATE_ACCENT_LIFT * 0.5,
+            STATE_ACCENT_SHADE * 0.5,
+        );
+        tokens.primary_active.background = accent_face(
+            self.accent_active,
+            STATE_ACCENT_LIFT * 0.5,
+            STATE_ACCENT_SHADE * 0.5,
+        );
         tokens.accent.background = accent_face(self.accent, ACCENT_LIFT * 0.5, ACCENT_SHADE * 0.5);
 
         // Status buttons: same relief, same state steps.
@@ -422,8 +506,8 @@ impl BaseStyle {
             hover.color = hsla(hover_colour);
             active.color = hsla(active_colour);
             normal.background = accent_face(base, ACCENT_LIFT, ACCENT_SHADE);
-            hover.background = accent_face(hover_colour, ACCENT_LIFT, ACCENT_SHADE);
-            active.background = accent_face(active_colour, ACCENT_LIFT, ACCENT_SHADE);
+            hover.background = accent_face(hover_colour, STATE_ACCENT_LIFT, STATE_ACCENT_SHADE);
+            active.background = accent_face(active_colour, STATE_ACCENT_LIFT, STATE_ACCENT_SHADE);
         }
 
         // A cool-to-bright sweep along a progress fill.
@@ -485,17 +569,45 @@ mod tests {
         for name in ["midnight", "cream", "dracula", "cyberpunk_neon"] {
             let t = crate::build(spec(name));
             let b = BaseStyle::from_tokens(&t);
-            for (label, colour) in [
-                ("button", b.button_outline),
-                ("field", b.field_outline_color),
+            for (label, colour, floor) in [
+                ("button", b.button_outline, b.border_ratio),
+                ("field", b.field_outline_color, b.border_ratio),
+                (
+                    "indicator",
+                    b.indicator_outline_color,
+                    b.ui_ratio * INDICATOR_FLOOR_SCALE,
+                ),
+                ("frame", b.frame_outline_color, b.border_ratio),
             ] {
-                let ratio = color::contrast_ratio(colour, t.canvas_bg);
+                let ratio = color::contrast_ratio(colour, t.panel_bg);
                 assert!(
-                    ratio + 1e-6 >= b.border_ratio,
-                    "{name} {label} outline {ratio} < {}",
-                    b.border_ratio
+                    ratio + 1e-6 >= floor,
+                    "{name} {label} outline {ratio} < {floor}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn indicators_are_stronger_than_field_outlines() {
+        for name in ["midnight", "cream", "dracula", "cyberpunk_neon"] {
+            let t = crate::build(spec(name));
+            let b = BaseStyle::from_tokens(&t);
+            let field = color::contrast_ratio(b.field_outline_color, t.panel_bg);
+            let indicator = color::contrast_ratio(b.indicator_outline_color, t.panel_bg);
+            assert!(
+                indicator > field,
+                "{name}: indicator {indicator} should beat field {field}"
+            );
+            // The strengthened indicator is deliberately backed off by 20%
+            // from the non-text floor the previous pass used.
+            assert!(
+                (indicator - b.ui_ratio * INDICATOR_FLOOR_SCALE).abs() < 0.05,
+                "{name}: indicator {indicator} should sit at 80% of {}",
+                b.ui_ratio
+            );
+            assert_eq!(b.indicator_outline_color[3], 255, "{name}: opacity");
+            assert_eq!(b.frame_outline_color[3], 255, "{name}: opacity");
         }
     }
 
@@ -534,17 +646,47 @@ mod tests {
             let t = crate::build(spec(name));
             for base in [t.accent_color, t.warning, t.error, t.success, t.info] {
                 let fg = color::on_color(base, [color::WHITE, color::BLACK], 4.5);
-                let (top, bottom) = accent_stops(base, ACCENT_LIFT, ACCENT_SHADE);
                 let base_ratio = color::contrast_ratio(fg, base);
-                for (end, colour) in [("top", top), ("bottom", bottom)] {
-                    let ratio = color::contrast_ratio(fg, colour);
-                    assert!(
-                        ratio + 1e-6 >= base_ratio,
-                        "{name}: {end} end {ratio} < base {base_ratio} on {base:?}"
-                    );
+                for (label, lift, shade) in [
+                    ("rest", ACCENT_LIFT, ACCENT_SHADE),
+                    ("state", STATE_ACCENT_LIFT, STATE_ACCENT_SHADE),
+                    ("wash", STATE_ACCENT_LIFT * 0.5, STATE_ACCENT_SHADE * 0.5),
+                ] {
+                    let (top, bottom) = accent_stops(base, lift, shade);
+                    for (end, colour) in [("top", top), ("bottom", bottom)] {
+                        let ratio = color::contrast_ratio(fg, colour);
+                        assert!(
+                            ratio + 1e-6 >= base_ratio,
+                            "{name} {label}: {end} end {ratio} < base {base_ratio} on {base:?}"
+                        );
+                    }
                 }
             }
         }
+    }
+
+    #[test]
+    fn focus_uses_the_edge_fallback_not_the_hard_band() {
+        let s = spec("midnight");
+        let t = crate::build(s);
+        let mut theme = Theme::default();
+        crate::skin::apply_tokens(&mut theme, &t);
+        let base = BaseStyle::from_spec(s, &t);
+        base.apply(&mut theme, &t);
+
+        // The derivation keeps the full, contrast-checked ring colour...
+        assert_eq!(base.focus_ring[3], 255);
+        assert!(
+            color::contrast_ratio(base.focus_ring, t.panel_bg) + 1e-6 >= base.ui_ratio,
+            "focus ring should be derived at the UI floor"
+        );
+        // ...and hands the full colour to the theme for the 1 px edge.
+        assert_eq!(theme.colors.ring.a, 1.0);
+        // The 3 px band is off: the renderer cannot blur a border, so a band
+        // would read as a hard outline. Focus keeps a 1 px tinted edge and the
+        // gallery supplies the soft halo.
+        assert!(!theme.focus_ring);
+        assert_eq!(theme.colors.drag_border.a, 1.0);
     }
 
     #[test]
@@ -563,18 +705,21 @@ mod tests {
         crate::skin::apply_tokens(&mut theme, &tokens);
         let stock = (
             theme.colors.input,
+            theme.colors.border,
             theme.colors.button_hover,
             theme.colors.scrollbar_thumb,
         );
 
         BaseStyle::from_spec(s, &tokens).apply(&mut theme, &tokens);
-        assert_ne!(theme.colors.button_hover, stock.1);
-        assert_ne!(theme.colors.scrollbar_thumb, stock.2);
+        assert_ne!(theme.colors.border, stock.1);
+        assert_ne!(theme.colors.button_hover, stock.2);
+        assert_ne!(theme.colors.scrollbar_thumb, stock.3);
 
         crate::skin::apply_tokens(&mut theme, &tokens);
         assert_eq!(
             (
                 theme.colors.input,
+                theme.colors.border,
                 theme.colors.button_hover,
                 theme.colors.scrollbar_thumb
             ),
@@ -593,7 +738,25 @@ mod tests {
 
         for (name, background) in [
             ("button", theme.tokens.button.background),
+            ("button hover", theme.tokens.button_hover.background),
+            ("button active", theme.tokens.button_active.background),
             ("button primary", theme.tokens.button_primary.background),
+            (
+                "button primary hover",
+                theme.tokens.button_primary_hover.background,
+            ),
+            (
+                "button primary active",
+                theme.tokens.button_primary_active.background,
+            ),
+            (
+                "button danger hover",
+                theme.tokens.button_danger_hover.background,
+            ),
+            (
+                "button danger active",
+                theme.tokens.button_danger_active.background,
+            ),
             ("scrollbar thumb", theme.tokens.scrollbar_thumb.background),
             ("slider thumb", theme.tokens.slider_thumb.background),
             ("tab bar", theme.tokens.tab_bar.background),
