@@ -33,7 +33,8 @@ skin::apply_styled("midnight", WidgetStyle::Theme, cx);
 | LaceStyle rule | Source | gpui-kit mapping |
 |---|---|---|
 | `control_radius` / `corner_radius` | `LaceStyle.set_tokens`, fed by `DockStyleCategory.CORE` | `Theme.radius` / `Theme.radius_lg` |
-| Button face, `+0.04` hover, `+0.08` pressed, toward contrast, for every variant | `_paint.HOVER_STEP`, `_paint.PRESS_STEP`, `_buttons.face_colors` | `button_hover`, `button_active`, the primary/secondary pairs, and every status button pair; the depth pass adds the face sheen |
+| Button face, `+0.04` hover, `+0.08` pressed, toward contrast, for every variant | `_paint.HOVER_STEP`, `_paint.PRESS_STEP`, `_buttons.face_colors` | `button_hover`, `button_active`, the primary/secondary pairs, and every status button pair; the depth pass adds the face sheen. Stock `Button` only draws its 1 px border for `Default`/`.outline()` — `Primary`/`Danger`/`Warning`/`Success`/`Info` are borderless by component design (their `border_color` ≈ face colour), so they show the same hover/active stepping but no outline |
+| Partially-checked checkbox: accent wash (28%) with accent outline and dash | `_primitives.check_box` (`PARTIAL_WASH`) | Not representable: stock `Checkbox` is a `bool` with no tri-state, so the gallery shows only checked/unchecked |
 | Progress fill: accent, rounded ends | `_range.progress_contents` | `progress_bar` (accent-to-`accent_bright` sweep) |
 | Button outline: text mixed over the button face at `outline_strength`, lifted to the border floor | `_paint.stroke`, `_paint.legible`, `_buttons.face_colors` | Structural `ThemeColor::border` family (`frame_outline_color`, opaque); `ThemeColor::input` carries the indicator value (below) |
 | Field outline: text mixed over the field fill at `outline_strength`, lifted to the border floor | `_inputs.field_outline` | `BaseStyle::field_outline_color` (derived and documented); shares the `ThemeColor::input` slot with indicators, so the indicator value wins on screen |
@@ -42,7 +43,7 @@ skin::apply_styled("midnight", WidgetStyle::Theme, cx);
 | Keyboard focus ring: accent, held to `ui_ratio` (3:1), width `focus_width` | `_paint.legible`, `_buttons._face` | `ThemeColor::ring` keeps the full-strength accent for the 1 px tinted edge; `Theme.focus_ring` is off because gpui-kit's hard 3 px band cannot blur — the gallery adds a soft `BoxShadow` halo around the focused field/control; `Theme.drag_border` stays opaque |
 | Scrollbar thumb: text over the window at `.32` idle, `.45` hover, `.55` pressed; `.05` track; all held to `ui_ratio` | `_primitives.scrollbar` | `scrollbar_thumb`, `scrollbar_thumb_hover`, `scrollbar` |
 | Slider: accent groove fill and button-face handle with an outline | `_range.slider` | `slider_bar` (accent), `slider_thumb` (button face) |
-| Checked indicator: accent fill, readable glyph; radio is a dot, not a check | `_primitives.check_box`, `_primitives.radio_button` | Accent wash from `primary`; checked checkbox keeps its glyph plus an app-side halo; checked radio is covered by the gallery's `dot_radio` overlay (14 px disc hides the stock check glyph, 6 px dot sits on top) because stock `Radio` hard-codes `checkbox_check_icon` |
+| Checked indicator: accent fill, readable glyph; radio is a dot, not a check | `_primitives.check_box`, `_primitives.radio_button` | Accent wash from `primary`; checked checkbox keeps its glyph plus an app-side halo; every radio carries the gallery's always-painted `dot_radio` cover disc (unchecked: eyelet fill, invisible; checked: accent wash, 8 px dot on top) because stock `Radio` hard-codes `checkbox_check_icon` and fades it with a spring |
 | `field_outline = true` | `LaceStyle` default | Recorded on `BaseStyle`; applied via the shared `input` slot (indicator value wins) |
 | `splitter_length = 50`, `focus_width = 2` | `LaceStyle` defaults | `focus_width` → `Theme.focus_ring`; splitter length is advisory (the dock geometry skin owns splitters) |
 
@@ -91,15 +92,20 @@ own app-side effects where they matter:
 
 - cards, the header, the sidebar and the sidebar footer card carry a soft
   black shadow scaled for dark and light modes;
-- primary actions (`New item`, `Create`, `Save changes`) get a low-alpha
-  accent halo (blur 18, alpha 0.28);
-- a checked checkbox's indicator gets an accent halo (blur 10, alpha 0.32);
-- a focused input or textarea gets an accent halo (blur 16, alpha 0.32);
+- primary actions (`New item`, `Create`, `Save changes`) get a tight accent
+  halo (blur 10, alpha 0.34);
+- a checked checkbox's indicator gets an accent halo (blur 6, alpha 0.38);
+- a focused input or textarea gets an accent halo (blur 9, alpha 0.36);
 - the slider thumb hides its hard 3 px ring under a surface-coloured
-  border-only disc and paints the halo outside it (blur 10, alpha 0.40);
+  border-only disc and paints the halo outside it (blur 7, alpha 0.45). The
+  24 px cover sits at the track's top with a 4 px band, so its hole (4..20 px)
+  lands exactly on the 16 px thumb (4..20 px of the 24 px track);
 - the selected sidebar row gets a softer accent glow;
-- checked radios get the `dot_radio` overlay plus the checkbox-strength halo
-  (skipped while disabled).
+- every radio carries the `dot_radio` cover disc (unchecked: the eyelet fill,
+  so it is invisible; checked: the accent wash with an 8 px dot) plus the
+  checkbox-strength halo while checked and enabled. The disc is always
+  painted because the stock check glyph fades out with a spring on deselect —
+  removing the cover with `checked` would flash the tick for a frame.
 
 These effects use `BoxShadow` in `examples/widgets.rs`; they are presentation,
 not tokens, so an application can vary them independently of the palette.

@@ -164,7 +164,8 @@ fn soft_glow(color: Hsla, blur: f32, alpha: f32) -> BoxShadow {
 
 /// Add a soft accent halo around a checked checkbox's indicator.
 ///
-/// The overlay is transparent and has no pointer handlers, so the checkbox
+/// The halo is tight (6 px blur) so it reads as density, not haze. The
+/// overlay is transparent and has no pointer handlers, so the checkbox
 /// keeps its own click, focus and keyboard handling. The indicator sits at the
 /// row's top-left corner, 0.125 rem down.
 fn glow_checkbox(checkbox: Checkbox, checked: bool, cx: &App) -> Div {
@@ -178,7 +179,7 @@ fn glow_checkbox(checkbox: Checkbox, checked: bool, cx: &App) -> Div {
                 .left(px(0.))
                 .size(rems(1.))
                 .rounded(radius)
-                .shadow(vec![soft_glow(theme.primary, 10.0, 0.32)]),
+                .shadow(vec![soft_glow(theme.primary, 6.0, 0.38)]),
         )
     })
 }
@@ -197,7 +198,7 @@ fn input_focused(state: &FocusHandle, window: &Window, cx: &mut App) -> bool {
 fn soft_input(input: Input, state: &Entity<InputState>, window: &Window, cx: &mut App) -> Input {
     let focus = state.read(cx).focus_handle(cx).clone();
     if input_focused(&focus, window, cx) {
-        input.shadow(vec![soft_glow(cx.theme().primary, 16.0, 0.32)])
+        input.shadow(vec![soft_glow(cx.theme().primary, 9.0, 0.36)])
     } else {
         input
     }
@@ -212,7 +213,7 @@ fn soft_textarea(
 ) -> Textarea {
     let focus = state.read(cx).focus_handle(cx).clone();
     if input_focused(&focus, window, cx) {
-        textarea.shadow(vec![soft_glow(cx.theme().primary, 16.0, 0.32)])
+        textarea.shadow(vec![soft_glow(cx.theme().primary, 9.0, 0.36)])
     } else {
         textarea
     }
@@ -227,6 +228,10 @@ fn soft_textarea(
 /// and keyboard handling. `surface` should be the solid colour behind the
 /// slider; the card's gradient moves by only a few lightness steps, so the
 /// band disappears into it.
+///
+/// Geometry: the thumb is a 16 px box at 4 px inside the 24 px track, so the
+/// 24 px cover sits at the track's top with a 4 px band — its hole (4..20 px)
+/// lands exactly on the thumb (4..20 px).
 fn soft_slider(slider: Slider, percentage: f32, surface: Hsla, glow: Hsla) -> Div {
     div()
         .relative()
@@ -236,68 +241,77 @@ fn soft_slider(slider: Slider, percentage: f32, surface: Hsla, glow: Hsla) -> Di
         .child(
             div()
                 .absolute()
-                .top(px(3.))
+                .top(px(0.))
                 .left(relative(percentage))
                 .ml(-px(12.))
                 .size(px(24.))
                 .rounded_full()
                 .border(px(4.))
                 .border_color(surface)
-                .shadow(vec![soft_glow(glow, 10.0, 0.40)]),
+                .shadow(vec![soft_glow(glow, 7.0, 0.45)]),
         )
 }
 
 /// A soft accent halo around a primary action. The wrapper has the button's
-/// bounds, so the glow lands outside it without changing the layout.
+/// bounds, so the glow lands outside it without changing the layout. Kept
+/// tight (10 px blur) so it reads as density around the button, not haze.
 fn action_glow(color: Hsla, radius: Pixels, button: impl IntoElement) -> Div {
     div()
         .rounded(radius)
-        .shadow(vec![soft_glow(color, 18.0, 0.28)])
+        .shadow(vec![soft_glow(color, 10.0, 0.34)])
         .child(button)
 }
 
 /// Cover a stock [`Radio`]'s check glyph with LaceStyle's dot.
 ///
-/// gpui-kit's radio hard-codes the checkbox check icon. The overlay is only
-/// painted while the radio is checked: a 14 px inner disc hides the 12 px
-/// glyph, then a dot sits on top. The stock 1 px eyelet, its fill and its focus
-/// input stay in place, and the overlay has no pointer handlers, so the radio
-/// underneath keeps focus, keyboard and click handling. The stock eyelet is
-/// 1 rem with a 0.125 rem top inset; only the medium gallery controls use this.
+/// gpui-kit's radio hard-codes the checkbox check icon, and the glyph fades
+/// out with a spring when a radio is deselected — removing the cover with
+/// `checked` would flash the tick for a frame on switch. The cover disc is
+/// therefore always painted: unchecked it matches the eyelet fill exactly
+/// (`input_background`), so it is invisible; checked it is the accent wash
+/// with an 8 px dot on top. The stock 1 px eyelet border stays visible around
+/// the 14 px disc, the eyelet fill and focus input stay in place, and the
+/// overlay has no pointer handlers, so the radio underneath keeps focus,
+/// keyboard and click handling. The stock eyelet is 1 rem with a 0.125 rem
+/// top inset; only the medium gallery controls use this.
 fn dot_radio(radio: Radio, checked: bool, disabled: bool, cx: &App) -> Div {
     let theme = cx.theme();
-    let fill: gpui_kit::gpui::Background = if disabled {
-        theme.primary.opacity(0.5).into()
+    let cover: gpui_kit::gpui::Background = if checked {
+        if disabled {
+            theme.primary.opacity(0.5).into()
+        } else {
+            theme.tokens.primary.into()
+        }
     } else {
-        theme.tokens.primary.into()
+        theme.input_background().into()
     };
     let dot = theme
         .primary_foreground
         .opacity(if disabled { 0.5 } else { 1. });
 
-    div().relative().child(radio).when(checked, |this| {
-        this.child(
-            div()
-                .absolute()
-                .top(rems(0.125))
-                .left(px(0.))
-                .size(rems(1.))
-                .p(px(1.))
-                .when(!disabled, |this| {
-                    this.shadow(vec![soft_glow(theme.primary, 10.0, 0.32)])
-                })
-                .child(
-                    div()
-                        .size_full()
-                        .rounded_full()
-                        .bg(fill)
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .child(div().size(rems(0.375)).rounded_full().bg(dot)),
-                ),
-        )
-    })
+    div().relative().child(radio).child(
+        div()
+            .absolute()
+            .top(rems(0.125))
+            .left(px(0.))
+            .size(rems(1.))
+            .p(px(1.))
+            .when(checked && !disabled, |this| {
+                this.shadow(vec![soft_glow(theme.primary, 6.0, 0.38)])
+            })
+            .child(
+                div()
+                    .size_full()
+                    .rounded_full()
+                    .bg(cover)
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .when(checked, |this| {
+                        this.child(div().size(rems(0.5)).rounded_full().bg(dot))
+                    }),
+            ),
+    )
 }
 
 /// A label + description on the left, a control on the right.
