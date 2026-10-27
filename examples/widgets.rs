@@ -65,7 +65,9 @@ use gpui_kit::component::{
     tag::Tag,
     ActiveTheme, Disableable, Icon, IconName, IndexPath, Sizable, WindowExt,
 };
-use gpui_kit::gpui::{black, relative, rems, BoxShadow, FocusHandle, Hsla, Pixels};
+use gpui_kit::gpui::{
+    black, relative, rems, BoxShadow, ElementId, FocusHandle, Hsla, MouseButton, Pixels,
+};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
@@ -224,7 +226,8 @@ fn soft_textarea(
 /// gpui-kit grows the hover ring as a hard 3 px border. This cover is a
 /// border-only disc in the surface colour: its hole is exactly the thumb, its
 /// band hides the ring, and its shadow paints the halo outside. The cover has
-/// no background and no pointer handlers, so the thumb keeps its drag, click
+/// no background, no group and no pointer handlers — a bare div inserts no
+/// hitbox, so it stays mouse-transparent and the thumb keeps its drag, click
 /// and keyboard handling. `surface` should be the solid colour behind the
 /// slider; the card's gradient moves by only a few lightness steps, so the
 /// band disappears into it.
@@ -233,23 +236,18 @@ fn soft_textarea(
 /// 24 px cover sits at the track's top with a 4 px band — its hole (4..20 px)
 /// lands exactly on the thumb (4..20 px).
 fn soft_slider(slider: Slider, percentage: f32, surface: Hsla, glow: Hsla) -> Div {
-    div()
-        .relative()
-        .w_full()
-        .group("soft-slider")
-        .child(slider)
-        .child(
-            div()
-                .absolute()
-                .top(px(0.))
-                .left(relative(percentage))
-                .ml(-px(12.))
-                .size(px(24.))
-                .rounded_full()
-                .border(px(4.))
-                .border_color(surface)
-                .shadow(vec![soft_glow(glow, 7.0, 0.45)]),
-        )
+    div().relative().w_full().child(slider).child(
+        div()
+            .absolute()
+            .top(px(0.))
+            .left(relative(percentage))
+            .ml(-px(12.))
+            .size(px(24.))
+            .rounded_full()
+            .border(px(4.))
+            .border_color(surface)
+            .shadow(vec![soft_glow(glow, 7.0, 0.45)]),
+    )
 }
 
 /// A soft accent halo around a primary action. The wrapper has the button's
@@ -260,6 +258,69 @@ fn action_glow(color: Hsla, radius: Pixels, button: impl IntoElement) -> Div {
         .rounded(radius)
         .shadow(vec![soft_glow(color, 10.0, 0.34)])
         .child(button)
+}
+
+/// A button that glows on hover and glows harder while pressed.
+///
+/// Stock `Button` owns its hover/active background, border and foreground,
+/// but the theme has no per-state shadow slot, so the halos live here. Hover
+/// is style-only: the button's own group drives a `group_hover` halo on
+/// itself. Press needs a listener (plain divs cannot watch hover), so the
+/// wrapper records the press and swaps in a denser, brighter halo — it stacks
+/// over the hover one, which is exactly the extra intensity a press wants.
+/// The wrapper hugs the button, so the halo reads as the button's own. `id`
+/// must be unique per button. Disabled buttons render bare — they neither
+/// hover-glow nor track presses.
+fn glow_button(
+    button: Button,
+    id: &'static str,
+    glow: Hsla,
+    disabled: bool,
+    pressed: bool,
+    cx: &mut Context<WidgetsApp>,
+) -> Div {
+    let press_id: SharedString = id.into();
+    let release_id: SharedString = id.into();
+    let release_out_id: SharedString = id.into();
+    let button = if disabled {
+        button
+    } else {
+        button
+            .group(id)
+            .group_hover(id, move |s| s.shadow(vec![soft_glow(glow, 8.0, 0.30)]))
+    };
+    div()
+        .child(button)
+        .when(!disabled, |this| {
+            this.on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, _, _, cx| {
+                    this.glow_press = Some(press_id.clone());
+                    cx.notify();
+                }),
+            )
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(move |this, _, _, cx| {
+                    if this.glow_press.as_deref() == Some(release_id.as_ref()) {
+                        this.glow_press = None;
+                        cx.notify();
+                    }
+                }),
+            )
+            .on_mouse_up_out(
+                MouseButton::Left,
+                cx.listener(move |this, _, _, cx| {
+                    if this.glow_press.as_deref() == Some(release_out_id.as_ref()) {
+                        this.glow_press = None;
+                        cx.notify();
+                    }
+                }),
+            )
+        })
+        .when(pressed, |this| {
+            this.shadow(vec![soft_glow(glow, 5.0, 0.45)])
+        })
 }
 
 /// Cover a stock [`Radio`]'s check glyph with LaceStyle's dot.
@@ -312,6 +373,58 @@ fn dot_radio(radio: Radio, checked: bool, disabled: bool, cx: &App) -> Div {
                     }),
             ),
     )
+}
+
+/// Whether the switch with this gallery id holds keyboard focus.
+///
+/// The stock [`Switch`] owns its focus handle through the same keyed state,
+/// so reading the same key here observes the same handle. The theme's global
+/// focus band is off (it cannot blur), so the gallery draws the halo itself.
+fn switch_focused(id: &'static str, window: &mut Window, cx: &mut App) -> bool {
+    window
+        .use_keyed_state(ElementId::Name(id.into()), cx, |_, cx| cx.focus_handle())
+        .read(cx)
+        .is_focused(window)
+}
+
+/// A soft accent halo hugging a switch's track.
+///
+/// Focus gets the soft halo; a switched-on track gets a denser, brighter one;
+/// both at once stack. The 36x20 overlay sits exactly on the medium track;
+/// only the medium gallery switches use this. Disabled switches stay dark.
+fn glow_switch(
+    switch: Switch,
+    id: &'static str,
+    on: bool,
+    disabled: bool,
+    window: &mut Window,
+    cx: &mut App,
+) -> Div {
+    let primary = cx.theme().primary;
+    let mut halos = Vec::new();
+    if !disabled {
+        if switch_focused(id, window, cx) {
+            halos.push(soft_glow(primary, 9.0, 0.36));
+        }
+        if on {
+            halos.push(soft_glow(primary, 6.0, 0.42));
+        }
+    }
+    div()
+        .relative()
+        .child(switch)
+        .when(!halos.is_empty(), |this| {
+            this.child(
+                div()
+                    .absolute()
+                    .top(px(0.))
+                    .left(px(0.))
+                    .w(px(36.))
+                    .h(px(20.))
+                    .rounded_full()
+                    .shadow(halos),
+            )
+        })
 }
 
 /// A label + description on the left, a control on the right.
@@ -465,6 +578,8 @@ struct WidgetsApp {
 
     // Controls page state.
     pinned: bool,
+    // Button halo state: which glow wrapper is pressed.
+    glow_press: Option<SharedString>,
     newsletter: bool,
     analytics: bool,
     density_mode: usize,
@@ -549,6 +664,7 @@ impl WidgetsApp {
             style: WidgetStyle::LaceBase,
             page: 0,
             pinned: false,
+            glow_press: None,
             newsletter: true,
             analytics: false,
             density_mode: 1,
@@ -966,7 +1082,7 @@ impl WidgetsApp {
 
     fn page(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         match self.page {
-            0 => self.controls_page(cx).into_any_element(),
+            0 => self.controls_page(window, cx).into_any_element(),
             1 => self.forms_page(window, cx).into_any_element(),
             2 => self.data_page(cx).into_any_element(),
             3 => self.feedback_page(cx).into_any_element(),
@@ -1094,12 +1210,16 @@ impl WidgetsApp {
 
     // -- page: controls ----------------------------------------------------
 
-    fn controls_page(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn controls_page(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let muted = theme.muted_foreground;
         let border = theme.border;
         let primary = theme.primary;
         let list = theme.colors.list;
+        let danger = theme.button_danger;
+        let warning = theme.button_warning;
+        let success = theme.button_success;
+        let info = theme.button_info;
         let volume_pct = self.volume.read(cx).percentage().end;
 
         div()
@@ -1118,13 +1238,62 @@ impl WidgetsApp {
                         row()
                             .flex_wrap()
                             .gap_2()
-                            .child(Button::new("btn-default").label("Default"))
-                            .child(Button::new("btn-primary").label("Primary").primary())
-                            .child(Button::new("btn-secondary").label("Secondary").secondary())
-                            .child(Button::new("btn-danger").label("Danger").danger())
-                            .child(Button::new("btn-warning").label("Warning").warning())
-                            .child(Button::new("btn-success").label("Success").success())
-                            .child(Button::new("btn-info").label("Info").info())
+                            .child(glow_button(
+                                Button::new("btn-default").label("Default"),
+                                "glow-default",
+                                primary,
+                                false,
+                                self.glow_press.as_deref() == Some("glow-default"),
+                                cx,
+                            ))
+                            .child(glow_button(
+                                Button::new("btn-primary").label("Primary").primary(),
+                                "glow-primary",
+                                primary,
+                                false,
+                                self.glow_press.as_deref() == Some("glow-primary"),
+                                cx,
+                            ))
+                            .child(glow_button(
+                                Button::new("btn-secondary").label("Secondary").secondary(),
+                                "glow-secondary",
+                                primary,
+                                false,
+                                self.glow_press.as_deref() == Some("glow-secondary"),
+                                cx,
+                            ))
+                            .child(glow_button(
+                                Button::new("btn-danger").label("Danger").danger(),
+                                "glow-danger",
+                                danger,
+                                false,
+                                self.glow_press.as_deref() == Some("glow-danger"),
+                                cx,
+                            ))
+                            .child(glow_button(
+                                Button::new("btn-warning").label("Warning").warning(),
+                                "glow-warning",
+                                warning,
+                                false,
+                                self.glow_press.as_deref() == Some("glow-warning"),
+                                cx,
+                            ))
+                            .child(glow_button(
+                                Button::new("btn-success").label("Success").success(),
+                                "glow-success",
+                                success,
+                                false,
+                                self.glow_press.as_deref() == Some("glow-success"),
+                                cx,
+                            ))
+                            .child(glow_button(
+                                Button::new("btn-info").label("Info").info(),
+                                "glow-info",
+                                info,
+                                false,
+                                self.glow_press.as_deref() == Some("glow-info"),
+                                cx,
+                            ))
                             .child(Button::new("btn-ghost").label("Ghost").ghost())
                             .child(Button::new("btn-link").label("Link").link())
                             .child(Button::new("btn-text").label("Text").text()),
@@ -1242,7 +1411,7 @@ impl WidgetsApp {
                             .child(
                                 col()
                                     .gap_2()
-                                    .child(
+                                    .child(glow_switch(
                                         Switch::new("switch-auto-update")
                                             .checked(self.auto_update)
                                             .label("Install updates automatically")
@@ -1250,8 +1419,13 @@ impl WidgetsApp {
                                                 this.auto_update = *checked;
                                                 cx.notify();
                                             })),
-                                    )
-                                    .child(
+                                        "switch-auto-update",
+                                        self.auto_update,
+                                        false,
+                                        window,
+                                        cx,
+                                    ))
+                                    .child(glow_switch(
                                         Switch::new("switch-compact")
                                             .checked(self.compact_mode)
                                             .label("Compact sidebar")
@@ -1259,8 +1433,13 @@ impl WidgetsApp {
                                                 this.compact_mode = *checked;
                                                 cx.notify();
                                             })),
-                                    )
-                                    .child(
+                                        "switch-compact",
+                                        self.compact_mode,
+                                        false,
+                                        window,
+                                        cx,
+                                    ))
+                                    .child(glow_switch(
                                         Switch::new("switch-notifications")
                                             .checked(self.notifications)
                                             .label("Desktop notifications")
@@ -1268,7 +1447,12 @@ impl WidgetsApp {
                                                 this.notifications = *checked;
                                                 cx.notify();
                                             })),
-                                    )
+                                        "switch-notifications",
+                                        self.notifications,
+                                        false,
+                                        window,
+                                        cx,
+                                    ))
                                     .child(div().h(px(1.)).bg(border))
                                     .child(
                                         row()
@@ -1568,36 +1752,57 @@ impl WidgetsApp {
                     .child(setting_row(
                         "Automatic updates",
                         "Install Lace preset updates in the background.",
-                        Switch::new("pref-auto")
-                            .checked(self.auto_update)
-                            .on_change(cx.listener(|this, checked, _, cx| {
-                                this.auto_update = *checked;
-                                cx.notify();
-                            })),
+                        glow_switch(
+                            Switch::new("pref-auto")
+                                .checked(self.auto_update)
+                                .on_change(cx.listener(|this, checked, _, cx| {
+                                    this.auto_update = *checked;
+                                    cx.notify();
+                                })),
+                            "pref-auto",
+                            self.auto_update,
+                            false,
+                            window,
+                            cx,
+                        ),
                         cx,
                     ))
                     .child(rule(cx))
                     .child(setting_row(
                         "Compact mode",
                         "Tighten list rows and control heights.",
-                        Switch::new("pref-compact")
-                            .checked(self.compact_mode)
-                            .on_change(cx.listener(|this, checked, _, cx| {
-                                this.compact_mode = *checked;
-                                cx.notify();
-                            })),
+                        glow_switch(
+                            Switch::new("pref-compact")
+                                .checked(self.compact_mode)
+                                .on_change(cx.listener(|this, checked, _, cx| {
+                                    this.compact_mode = *checked;
+                                    cx.notify();
+                                })),
+                            "pref-compact",
+                            self.compact_mode,
+                            false,
+                            window,
+                            cx,
+                        ),
                         cx,
                     ))
                     .child(rule(cx))
                     .child(setting_row(
                         "Desktop notifications",
                         "Show a toast when a theme passes its contrast audit.",
-                        Switch::new("pref-notifications")
-                            .checked(self.notifications)
-                            .on_change(cx.listener(|this, checked, _, cx| {
-                                this.notifications = *checked;
-                                cx.notify();
-                            })),
+                        glow_switch(
+                            Switch::new("pref-notifications")
+                                .checked(self.notifications)
+                                .on_change(cx.listener(|this, checked, _, cx| {
+                                    this.notifications = *checked;
+                                    cx.notify();
+                                })),
+                            "pref-notifications",
+                            self.notifications,
+                            false,
+                            window,
+                            cx,
+                        ),
                         cx,
                     ))
                     .child(rule(cx))

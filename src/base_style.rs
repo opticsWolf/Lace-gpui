@@ -118,6 +118,12 @@ pub const STATE_ACCENT_SHADE: f64 = 0.016;
 /// LaceStyle's widget-level rules, derived from one [`Tokens`] palette.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BaseStyle {
+    /// Multiplier for the depth pass, 1.0 by default.
+    ///
+    /// Every gradient lift/shade in [`BaseStyle::apply`] is multiplied by
+    /// this. 1.0 is the spec look, 0.0 is flat LaceStyle; use
+    /// [`BaseStyle::with_depth_scale`] to tune it per application.
+    pub depth_scale: f64,
     /// Control corner radius, px.
     pub control_radius: f32,
     /// Dock card / large-surface corner radius, px.
@@ -277,6 +283,15 @@ impl BaseStyle {
         }
     }
 
+    /// Scale the depth pass: 1.0 is the spec look, 0.0 is flat LaceStyle.
+    ///
+    /// Negative scales clamp to 0.0; values above 1.0 deepen the relief.
+    /// Solid token colours are untouched — only the gradient stops move.
+    pub fn with_depth_scale(mut self, scale: f64) -> Self {
+        self.depth_scale = scale.max(0.0);
+        self
+    }
+
     fn derive(
         t: &Tokens,
         outline_level: Contrast,
@@ -306,6 +321,7 @@ impl BaseStyle {
             corner_radius,
             popup_radius,
             splitter_length: SPLITTER_LENGTH,
+            depth_scale: 1.0,
             focus_width: t.focus_width.max(0.0) as f32,
             outline_strength: t.outline_strength,
             border_ratio,
@@ -435,43 +451,56 @@ impl BaseStyle {
 
         // Solid tokens first, then the depth layer: every background below
         // keeps its token's representative `color` for text and icons.
+        // `depth_scale` (1.0 = spec, 0.0 = flat) multiplies every lift and
+        // shade; the progress sweep is a hue sweep, not relief, and stays.
         theme.tokens = ThemeTokens::from(&theme.colors);
         let tokens = &mut theme.tokens;
+        let depth = self.depth_scale;
+        let at = |v: f64| v * depth;
 
         // Neutral button faces. Resting faces stay quiet; hover and press get
         // a stronger sheen so a state change is visible at a glance.
-        let face = raised(self.button, FACE_LIFT, FACE_SHADE);
+        let face = raised(self.button, at(FACE_LIFT), at(FACE_SHADE));
         tokens.button.background = face;
         tokens.button_secondary.background = face;
-        tokens.secondary.background = raised(self.button, HEADER_LIFT, HEADER_SHADE);
-        let hover = raised(self.button_hover, STATE_FACE_LIFT, STATE_FACE_SHADE);
+        tokens.secondary.background = raised(self.button, at(HEADER_LIFT), at(HEADER_SHADE));
+        let hover = raised(self.button_hover, at(STATE_FACE_LIFT), at(STATE_FACE_SHADE));
         tokens.button_hover.background = hover;
         tokens.button_secondary_hover.background = hover;
         tokens.secondary_hover.background = hover;
-        let active = inset(self.button_active, STATE_INSET, STATE_INSET);
+        let active = inset(self.button_active, at(STATE_INSET), at(STATE_INSET));
         tokens.button_active.background = active;
         tokens.button_secondary_active.background = active;
         tokens.secondary_active.background = active;
 
         // Accent faces and the accent wash behind checkboxes, radios and
         // switch tracks.
-        tokens.button_primary.background = accent_face(self.accent, ACCENT_LIFT, ACCENT_SHADE);
-        tokens.button_primary_hover.background =
-            accent_face(self.accent_hover, STATE_ACCENT_LIFT, STATE_ACCENT_SHADE);
-        tokens.button_primary_active.background =
-            accent_face(self.accent_active, STATE_ACCENT_LIFT, STATE_ACCENT_SHADE);
-        tokens.primary.background = accent_face(self.accent, ACCENT_LIFT * 0.5, ACCENT_SHADE * 0.5);
+        tokens.button_primary.background =
+            accent_face(self.accent, at(ACCENT_LIFT), at(ACCENT_SHADE));
+        tokens.button_primary_hover.background = accent_face(
+            self.accent_hover,
+            at(STATE_ACCENT_LIFT),
+            at(STATE_ACCENT_SHADE),
+        );
+        tokens.button_primary_active.background = accent_face(
+            self.accent_active,
+            at(STATE_ACCENT_LIFT),
+            at(STATE_ACCENT_SHADE),
+        );
+        tokens.primary.background =
+            accent_face(self.accent, at(ACCENT_LIFT * 0.5), at(ACCENT_SHADE * 0.5));
         tokens.primary_hover.background = accent_face(
             self.accent_hover,
-            STATE_ACCENT_LIFT * 0.5,
-            STATE_ACCENT_SHADE * 0.5,
+            at(STATE_ACCENT_LIFT * 0.5),
+            at(STATE_ACCENT_SHADE * 0.5),
         );
         tokens.primary_active.background = accent_face(
             self.accent_active,
-            STATE_ACCENT_LIFT * 0.5,
-            STATE_ACCENT_SHADE * 0.5,
+            at(STATE_ACCENT_LIFT * 0.5),
+            at(STATE_ACCENT_SHADE * 0.5),
         );
-        tokens.accent.background = accent_face(self.accent, ACCENT_LIFT * 0.5, ACCENT_SHADE * 0.5);
+        tokens.accent.background =
+            accent_face(self.accent, at(ACCENT_LIFT * 0.5), at(ACCENT_SHADE * 0.5));
 
         // Status buttons: same relief, same state steps.
         for (base, normal, hover, active) in [
@@ -505,23 +534,26 @@ impl BaseStyle {
             normal.color = hsla(base);
             hover.color = hsla(hover_colour);
             active.color = hsla(active_colour);
-            normal.background = accent_face(base, ACCENT_LIFT, ACCENT_SHADE);
-            hover.background = accent_face(hover_colour, STATE_ACCENT_LIFT, STATE_ACCENT_SHADE);
-            active.background = accent_face(active_colour, STATE_ACCENT_LIFT, STATE_ACCENT_SHADE);
+            normal.background = accent_face(base, at(ACCENT_LIFT), at(ACCENT_SHADE));
+            hover.background =
+                accent_face(hover_colour, at(STATE_ACCENT_LIFT), at(STATE_ACCENT_SHADE));
+            active.background =
+                accent_face(active_colour, at(STATE_ACCENT_LIFT), at(STATE_ACCENT_SHADE));
         }
 
         // A cool-to-bright sweep along a progress fill.
         tokens.progress_bar.background = sweep(self.accent, source.accent_bright);
 
         // Thumbs get a little more roundness than a face.
-        tokens.scrollbar_thumb.background = raised(self.scrollbar_thumb, THUMB_LIFT, THUMB_SHADE);
+        tokens.scrollbar_thumb.background =
+            raised(self.scrollbar_thumb, at(THUMB_LIFT), at(THUMB_SHADE));
         tokens.scrollbar_thumb_hover.background =
-            raised(self.scrollbar_thumb_hover, THUMB_LIFT, THUMB_SHADE);
-        tokens.slider_thumb.background = raised(self.slider_thumb, THUMB_LIFT, THUMB_SHADE);
-        tokens.switch_thumb.background = raised(self.slider_thumb, THUMB_LIFT, THUMB_SHADE);
+            raised(self.scrollbar_thumb_hover, at(THUMB_LIFT), at(THUMB_SHADE));
+        tokens.slider_thumb.background = raised(self.slider_thumb, at(THUMB_LIFT), at(THUMB_SHADE));
+        tokens.switch_thumb.background = raised(self.slider_thumb, at(THUMB_LIFT), at(THUMB_SHADE));
 
         // Header, tab and table-head surfaces: a flatter sheen than controls.
-        let header = raised(source.tab_bg_normal, HEADER_LIFT, HEADER_SHADE);
+        let header = raised(source.tab_bg_normal, at(HEADER_LIFT), at(HEADER_SHADE));
         tokens.tab_bar.background = header;
         tokens.tab_bar_segmented.background = header;
         tokens.tab.background = header;
@@ -530,20 +562,23 @@ impl BaseStyle {
         tokens.list_head.background = header;
         tokens.description_list_label.background = header;
         tokens.table_foot.background = header;
-        tokens.tab_active.background = raised(source.tab_bg_active, HEADER_LIFT, HEADER_SHADE);
-        tokens.status_bar.background = raised(source.panel_bg, HEADER_LIFT, HEADER_SHADE);
+        tokens.tab_active.background =
+            raised(source.tab_bg_active, at(HEADER_LIFT), at(HEADER_SHADE));
+        tokens.status_bar.background = raised(source.panel_bg, at(HEADER_LIFT), at(HEADER_SHADE));
 
         // Quiet large surfaces. The background gradient is what gives the
         // window its atmosphere; panels and cards sit on it with their own.
-        tokens.background.background = raised(source.canvas_bg, SURFACE_LIFT, SURFACE_SHADE);
-        tokens.sidebar.background = raised(source.sidebar_bg, SURFACE_LIFT, SURFACE_SHADE);
-        tokens.sidebar_primary.background = raised(source.panel_bg, SURFACE_LIFT, SURFACE_SHADE);
-        let panel = raised(source.panel_bg, SURFACE_LIFT, SURFACE_SHADE);
+        tokens.background.background =
+            raised(source.canvas_bg, at(SURFACE_LIFT), at(SURFACE_SHADE));
+        tokens.sidebar.background = raised(source.sidebar_bg, at(SURFACE_LIFT), at(SURFACE_SHADE));
+        tokens.sidebar_primary.background =
+            raised(source.panel_bg, at(SURFACE_LIFT), at(SURFACE_SHADE));
+        let panel = raised(source.panel_bg, at(SURFACE_LIFT), at(SURFACE_SHADE));
         tokens.list.background = panel;
         tokens.table.background = panel;
         tokens.accordion.background = panel;
         tokens.group_box.background = panel;
-        tokens.popover.background = raised(source.tooltip_bg, HEADER_LIFT, HEADER_SHADE);
+        tokens.popover.background = raised(source.tooltip_bg, at(HEADER_LIFT), at(HEADER_SHADE));
     }
 }
 
@@ -695,6 +730,40 @@ mod tests {
         assert_eq!(b.control_radius, 4.0);
         assert_eq!(b.corner_radius, 10.0);
         assert_eq!(b.popup_radius, 6.0);
+    }
+
+    #[test]
+    fn depth_scale_flattens_the_relief() {
+        let s = spec("midnight");
+        let tokens = crate::build(s);
+        assert_eq!(BaseStyle::from_spec(s, &tokens).depth_scale, 1.0);
+        assert_eq!(
+            BaseStyle::from_spec(s, &tokens)
+                .with_depth_scale(-0.5)
+                .depth_scale,
+            0.0,
+            "negative scales clamp to flat"
+        );
+
+        let mut full = Theme::default();
+        crate::skin::apply_tokens(&mut full, &tokens);
+        BaseStyle::from_spec(s, &tokens).apply(&mut full, &tokens);
+        let mut flat = Theme::default();
+        crate::skin::apply_tokens(&mut flat, &tokens);
+        BaseStyle::from_spec(s, &tokens)
+            .with_depth_scale(0.0)
+            .apply(&mut flat, &tokens);
+
+        // Solid representative colours are untouched — only stops move.
+        assert_eq!(full.tokens.button.color, flat.tokens.button.color);
+        // The relief itself collapses: same gradient shape, moved stops.
+        let full_dbg = format!("{:?}", full.tokens.button.background);
+        let flat_dbg = format!("{:?}", flat.tokens.button.background);
+        assert_ne!(full_dbg, flat_dbg, "scale must move the stops");
+        assert!(
+            flat_dbg.contains("LinearGradient"),
+            "flat keeps the gradient shape so easing back up needs no reshape"
+        );
     }
 
     #[test]

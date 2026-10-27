@@ -80,6 +80,12 @@ multi-stop edge-inward glow), so "inward" relief is expressed as a top-lit
 raise on hover and an inset inversion on press, plus blurred `BoxShadow`
 halos at the gallery layer where a true outer glow is wanted.
 
+The relief strength is a parameter: `BaseStyle::depth_scale` multiplies every
+gradient lift and shade (`with_depth_scale`), 1.0 is the spec look, 0.0 is
+flat LaceStyle, and values above 1.0 deepen it. Solid token colours are
+untouched — only the stops move — so easing the scale back up needs no
+reshape. The progress sweep is a hue sweep, not relief, and stays put.
+
 The accent direction is chosen per face from the contrast of white versus
 black. Both gradient stops are therefore at least as readable as the flat,
 contrast-checked accent: white-labelled accents only darken away from the
@@ -99,7 +105,20 @@ own app-side effects where they matter:
 - the slider thumb hides its hard 3 px ring under a surface-coloured
   border-only disc and paints the halo outside it (blur 7, alpha 0.45). The
   24 px cover sits at the track's top with a 4 px band, so its hole (4..20 px)
-  lands exactly on the 16 px thumb (4..20 px of the 24 px track);
+  lands exactly on the 16 px thumb (4..20 px of the 24 px track). The cover is
+  a bare div — no group, no handlers — so it inserts no hitbox and stays
+  mouse-transparent while the thumb keeps its drag (a `.group()` on the cover
+  once occluded the thumb and made it undraggable; groups hit-test);
+- the variant buttons (`Default`…`Info`) glow on hover (blur 8, alpha 0.30,
+  colour-matched: accent for neutral variants, the status colour for
+  `Danger`/`Warning`/`Success`/`Info`) and glow denser and brighter while
+  pressed (blur 5, alpha 0.45, stacking over the hover halo). Stock `Button`
+  has no per-state shadow slot, so the gallery's `glow_button` wrapper does
+  it: hover is style-only via the button's own group, presses are tracked by
+  the wrapper. Ghost/link/text stay bare, and disabled buttons never glow;
+- every switch hugs a track halo via `glow_switch`: focus gets the soft halo
+  (blur 9, alpha 0.36), a switched-on track gets a denser, brighter one
+  (blur 6, alpha 0.42), and both at once stack. Disabled switches stay dark;
 - the selected sidebar row gets a softer accent glow;
 - every radio carries the `dot_radio` cover disc (unchecked: the eyelet fill,
   so it is invisible; checked: the accent wash with an 8 px dot) plus the

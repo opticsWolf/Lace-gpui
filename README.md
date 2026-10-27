@@ -24,7 +24,7 @@ lace-gpui = { version = "0.0.2", features = ["gpui-kit"] }
 | `contrast` | The rulebook and its fixer — port of `lace/theme_contrast.py` (`enforce`) | `color`, `engine` |
 | `themes` | 16 curated presets, dark-to-light, from `midnight` to `cyberpunk_neon` | `engine` |
 | `skin` | The bridge: `apply("dracula", cx)` paints a running gpui-kit app | gpui-kit 0.8 |
-| `base_style` | LaceStyle's flat widget layer — derived outlines, state steps, focus ring, scrollbar/slider mixes and a shallow gradient depth layer | gpui-kit 0.8 |
+| `base_style` | LaceStyle's flat widget layer — derived outlines, state steps, focus ring, scrollbar/slider mixes and a shallow gradient depth layer (relief scalable via `BaseStyle::depth_scale`) | gpui-kit 0.8 |
 | `geometry` | An application-side dock skin: gaps, rounded panels, outlines, shadow/glow and configurable splitters | gpui-kit 0.8 |
 
 The colour core and the engine have **zero dependencies**; only the `gpui-kit`
@@ -72,9 +72,11 @@ The gallery starts with `WidgetStyle::LaceBase`: LaceStyle's flat outlines,
 `+0.04` hover and `+0.08` pressed steps, full-strength accent ring (1 px edge;
 the hard 3 px band stays off), scrollbar and
 slider mixes, plus a shallow vertical sheen on faces (stronger on hover,
-inset on press), tabs and large surfaces,
+inset on press, scalable via `depth_scale`), tabs and large surfaces,
 a progress sweep, soft card/header shadows, blurred accent halos around primary
-actions, focused inputs, checked checkboxes and the slider thumb, and a radio
+actions, focused inputs, checked checkboxes and the slider thumb (whose cover
+stays mouse-transparent so the thumb drags), hover/press glows on the variant
+buttons, focus/active halos on switches, and a radio
 dot overlay (stock `Radio` hard-codes the check glyph). The **Lace style / Theme only** button in the title strip toggles the
 widget layer live, and the theme arrows keep the selected layer. The mapping
 and gpui-kit's structural limits are in
