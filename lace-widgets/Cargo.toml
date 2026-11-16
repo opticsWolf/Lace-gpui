@@ -1,0 +1,17 @@
+[package]
+name = "lace-widgets"
+version = "0.0.1"
+edition = "2021"
+license = "Apache-2.0"
+description = "LaceStyle for gpui: Lace's flat, vector-drawn control layer as custom gpui widgets."
+
+[dependencies]
+gpui-kit = "0.8"
+lace-gpui = { path = "..", features = ["gpui-kit"] }
+# gpui strokes paths through lyon but does not re-export its cap and join
+# types; LaceStyle's glyphs need round caps. Same major as gpui's, so cargo
+# unifies them.
+lyon_tessellation = "1"
+
+[[example]]
+name = "lacestyle"

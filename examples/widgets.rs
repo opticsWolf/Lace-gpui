@@ -65,13 +65,12 @@ use gpui_kit::component::{
     tag::Tag,
     ActiveTheme, Disableable, Icon, IconName, IndexPath, Sizable, WindowExt,
 };
-use gpui_kit::gpui::{
-    black, relative, rems, BoxShadow, ElementId, FocusHandle, Hsla, MouseButton, Pixels,
-};
+use gpui_kit::gpui::{black, relative, rems, BoxShadow, ElementId, FocusHandle, Hsla, Pixels};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
 use lace_gpui::{
+    button::GlowButton,
     skin::{self, WidgetStyle},
     themes,
 };
@@ -260,69 +259,6 @@ fn action_glow(color: Hsla, radius: Pixels, button: impl IntoElement) -> Div {
         .child(button)
 }
 
-/// A button that glows on hover and glows harder while pressed.
-///
-/// Stock `Button` owns its hover/active background, border and foreground,
-/// but the theme has no per-state shadow slot, so the halos live here. Hover
-/// is style-only: the button's own group drives a `group_hover` halo on
-/// itself. Press needs a listener (plain divs cannot watch hover), so the
-/// wrapper records the press and swaps in a denser, brighter halo — it stacks
-/// over the hover one, which is exactly the extra intensity a press wants.
-/// The wrapper hugs the button, so the halo reads as the button's own. `id`
-/// must be unique per button. Disabled buttons render bare — they neither
-/// hover-glow nor track presses.
-fn glow_button(
-    button: Button,
-    id: &'static str,
-    glow: Hsla,
-    disabled: bool,
-    pressed: bool,
-    cx: &mut Context<WidgetsApp>,
-) -> Div {
-    let press_id: SharedString = id.into();
-    let release_id: SharedString = id.into();
-    let release_out_id: SharedString = id.into();
-    let button = if disabled {
-        button
-    } else {
-        button
-            .group(id)
-            .group_hover(id, move |s| s.shadow(vec![soft_glow(glow, 8.0, 0.30)]))
-    };
-    div()
-        .child(button)
-        .when(!disabled, |this| {
-            this.on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |this, _, _, cx| {
-                    this.glow_press = Some(press_id.clone());
-                    cx.notify();
-                }),
-            )
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(move |this, _, _, cx| {
-                    if this.glow_press.as_deref() == Some(release_id.as_ref()) {
-                        this.glow_press = None;
-                        cx.notify();
-                    }
-                }),
-            )
-            .on_mouse_up_out(
-                MouseButton::Left,
-                cx.listener(move |this, _, _, cx| {
-                    if this.glow_press.as_deref() == Some(release_out_id.as_ref()) {
-                        this.glow_press = None;
-                        cx.notify();
-                    }
-                }),
-            )
-        })
-        .when(pressed, |this| {
-            this.shadow(vec![soft_glow(glow, 5.0, 0.45)])
-        })
-}
-
 /// Cover a stock [`Radio`]'s check glyph with LaceStyle's dot.
 ///
 /// gpui-kit's radio hard-codes the checkbox check icon, and the glyph fades
@@ -463,7 +399,8 @@ fn rule(cx: &App) -> Div {
 // ---------------------------------------------------------------------------
 
 fn open_about(window: &mut Window, cx: &mut App) {
-    window.open_dialog(cx, |dialog, _, _| {
+    let primary = cx.theme().primary;
+    window.open_dialog(cx, move |dialog, _, _| {
         dialog
             .title("About Lace Widgets")
             .child(
@@ -483,8 +420,11 @@ fn open_about(window: &mut Window, cx: &mut App) {
                     ),
             )
             .footer(
-                DialogFooter::new()
-                    .child(DialogClose::new().trigger(|button| button.label("Close"))),
+                DialogFooter::new().child(DialogClose::new().trigger(move |button: Button| {
+                    button
+                        .label("Close")
+                        .glow_hover("dlg-close", false, primary)
+                })),
             )
     });
 }
@@ -492,6 +432,7 @@ fn open_about(window: &mut Window, cx: &mut App) {
 fn open_create_dialog(window: &mut Window, cx: &mut App) {
     let name = cx.new(|cx| InputState::new(window, cx).placeholder("Launch plan"));
     let note = cx.new(|cx| InputState::new(window, cx).placeholder("What is this for?"));
+    let primary = cx.theme().primary;
 
     window.open_dialog(cx, move |dialog, _, _| {
         dialog
@@ -505,7 +446,11 @@ fn open_create_dialog(window: &mut Window, cx: &mut App) {
             )
             .footer(
                 DialogFooter::new()
-                    .child(DialogClose::new().trigger(|button| button.label("Cancel")))
+                    .child(DialogClose::new().trigger(move |button: Button| {
+                        button
+                            .label("Cancel")
+                            .glow_hover("dlg-cancel", false, primary)
+                    }))
                     .child(
                         Button::new("create-item")
                             .label("Create")
@@ -516,7 +461,8 @@ fn open_create_dialog(window: &mut Window, cx: &mut App) {
                                     cx,
                                 );
                                 window.close_dialog(cx);
-                            }),
+                            })
+                            .glow_hover("dlg-create", false, primary),
                     ),
             )
     });
@@ -578,8 +524,6 @@ struct WidgetsApp {
 
     // Controls page state.
     pinned: bool,
-    // Button halo state: which glow wrapper is pressed.
-    glow_press: Option<SharedString>,
     newsletter: bool,
     analytics: bool,
     density_mode: usize,
@@ -664,7 +608,6 @@ impl WidgetsApp {
             style: WidgetStyle::LaceBase,
             page: 0,
             pinned: false,
-            glow_press: None,
             newsletter: true,
             analytics: false,
             density_mode: 1,
@@ -717,7 +660,7 @@ impl WidgetsApp {
 
     // -- header ------------------------------------------------------------
 
-    fn header(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn header(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let background = cx.theme().tokens.title_bar;
         let border = cx.theme().title_bar_border;
         let muted = cx.theme().muted_foreground;
@@ -847,6 +790,7 @@ impl WidgetsApp {
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.set_widget_style(WidgetStyle::Theme, cx);
                             }))
+                            .glow("btn-glow-widget-style", false, window, cx)
                     } else {
                         Button::new("widget-style")
                             .label("Theme only")
@@ -856,6 +800,7 @@ impl WidgetsApp {
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.set_widget_style(WidgetStyle::LaceBase, cx);
                             }))
+                            .glow("btn-glow-widget-style", false, window, cx)
                     })
                     .child(action_glow(
                         primary,
@@ -866,7 +811,8 @@ impl WidgetsApp {
                             .icon(IconName::Plus)
                             .on_click(cx.listener(|_, _, window, cx| {
                                 open_create_dialog(window, cx);
-                            })),
+                            }))
+                            .glow("btn-glow-header-new", false, window, cx),
                     ))
                     .child(
                         Button::new("header-about")
@@ -1084,13 +1030,13 @@ impl WidgetsApp {
         match self.page {
             0 => self.controls_page(window, cx).into_any_element(),
             1 => self.forms_page(window, cx).into_any_element(),
-            2 => self.data_page(cx).into_any_element(),
-            3 => self.feedback_page(cx).into_any_element(),
+            2 => self.data_page(window, cx).into_any_element(),
+            3 => self.feedback_page(window, cx).into_any_element(),
             _ => self.navigation_page(cx).into_any_element(),
         }
     }
 
-    fn content_header(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn content_header(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let muted = theme.muted_foreground;
         let border = theme.border;
@@ -1134,7 +1080,8 @@ impl WidgetsApp {
                             .outline()
                             .on_click(cx.listener(|_, _, window, cx| {
                                 open_about(window, cx);
-                            })),
+                            }))
+                            .glow("btn-glow-header-about-2", false, window, cx),
                     )
                     .child(action_glow(
                         primary,
@@ -1145,7 +1092,8 @@ impl WidgetsApp {
                             .icon(IconName::Plus)
                             .on_click(cx.listener(|_, _, window, cx| {
                                 open_create_dialog(window, cx);
-                            })),
+                            }))
+                            .glow("btn-glow-header-create-2", false, window, cx),
                     )),
             )
     }
@@ -1157,7 +1105,7 @@ impl WidgetsApp {
             .h_full()
             .flex()
             .flex_col()
-            .child(self.content_header(cx))
+            .child(self.content_header(window, cx))
             .child(
                 div()
                     .id(("widgets-scroll", self.page))
@@ -1216,10 +1164,6 @@ impl WidgetsApp {
         let border = theme.border;
         let primary = theme.primary;
         let list = theme.colors.list;
-        let danger = theme.button_danger;
-        let warning = theme.button_warning;
-        let success = theme.button_success;
-        let info = theme.button_info;
         let volume_pct = self.volume.read(cx).percentage().end;
 
         div()
@@ -1238,60 +1182,46 @@ impl WidgetsApp {
                         row()
                             .flex_wrap()
                             .gap_2()
-                            .child(glow_button(
-                                Button::new("btn-default").label("Default"),
-                                "glow-default",
-                                primary,
+                            .child(Button::new("btn-default").label("Default").glow(
+                                "btn-glow-default",
                                 false,
-                                self.glow_press.as_deref() == Some("glow-default"),
+                                window,
                                 cx,
                             ))
-                            .child(glow_button(
-                                Button::new("btn-primary").label("Primary").primary(),
-                                "glow-primary",
-                                primary,
+                            .child(Button::new("btn-primary").label("Primary").primary().glow(
+                                "btn-glow-primary",
                                 false,
-                                self.glow_press.as_deref() == Some("glow-primary"),
+                                window,
                                 cx,
                             ))
-                            .child(glow_button(
-                                Button::new("btn-secondary").label("Secondary").secondary(),
-                                "glow-secondary",
-                                primary,
+                            .child(
+                                Button::new("btn-secondary")
+                                    .label("Secondary")
+                                    .secondary()
+                                    .glow("btn-glow-secondary", false, window, cx),
+                            )
+                            .child(Button::new("btn-danger").label("Danger").danger().glow(
+                                "btn-glow-danger",
                                 false,
-                                self.glow_press.as_deref() == Some("glow-secondary"),
+                                window,
                                 cx,
                             ))
-                            .child(glow_button(
-                                Button::new("btn-danger").label("Danger").danger(),
-                                "glow-danger",
-                                danger,
+                            .child(Button::new("btn-warning").label("Warning").warning().glow(
+                                "btn-glow-warning",
                                 false,
-                                self.glow_press.as_deref() == Some("glow-danger"),
+                                window,
                                 cx,
                             ))
-                            .child(glow_button(
-                                Button::new("btn-warning").label("Warning").warning(),
-                                "glow-warning",
-                                warning,
+                            .child(Button::new("btn-success").label("Success").success().glow(
+                                "btn-glow-success",
                                 false,
-                                self.glow_press.as_deref() == Some("glow-warning"),
+                                window,
                                 cx,
                             ))
-                            .child(glow_button(
-                                Button::new("btn-success").label("Success").success(),
-                                "glow-success",
-                                success,
+                            .child(Button::new("btn-info").label("Info").info().glow(
+                                "btn-glow-info",
                                 false,
-                                self.glow_press.as_deref() == Some("glow-success"),
-                                cx,
-                            ))
-                            .child(glow_button(
-                                Button::new("btn-info").label("Info").info(),
-                                "glow-info",
-                                info,
-                                false,
-                                self.glow_press.as_deref() == Some("glow-info"),
+                                window,
                                 cx,
                             ))
                             .child(Button::new("btn-ghost").label("Ghost").ghost())
@@ -1302,18 +1232,35 @@ impl WidgetsApp {
                         row()
                             .flex_wrap()
                             .gap_2()
-                            .child(Button::new("btn-small").label("Small").small())
-                            .child(Button::new("btn-medium").label("Medium"))
-                            .child(Button::new("btn-large").label("Large").large())
+                            .child(Button::new("btn-small").label("Small").small().glow(
+                                "btn-glow-small",
+                                false,
+                                window,
+                                cx,
+                            ))
+                            .child(Button::new("btn-medium").label("Medium").glow(
+                                "btn-glow-medium",
+                                false,
+                                window,
+                                cx,
+                            ))
+                            .child(Button::new("btn-large").label("Large").large().glow(
+                                "btn-glow-large",
+                                false,
+                                window,
+                                cx,
+                            ))
                             .child(
                                 Button::new("btn-icon-plus")
                                     .icon(IconName::Plus)
-                                    .tooltip("New item"),
+                                    .tooltip("New item")
+                                    .glow("btn-glow-icon-plus", false, window, cx),
                             )
                             .child(
                                 Button::new("btn-icon-search")
                                     .icon(IconName::Search)
-                                    .tooltip("Search"),
+                                    .tooltip("Search")
+                                    .glow("btn-glow-icon-search", false, window, cx),
                             )
                             .child(
                                 Button::new("btn-loading")
@@ -1328,7 +1275,8 @@ impl WidgetsApp {
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.pinned = !this.pinned;
                                         cx.notify();
-                                    })),
+                                    }))
+                                    .glow("btn-glow-pinned", false, window, cx),
                             ),
                     )
                     .child(
@@ -1721,7 +1669,8 @@ impl WidgetsApp {
                                                     state.set_value("", window, cx);
                                                 });
                                                 cx.notify();
-                                            })),
+                                            }))
+                                            .glow("btn-glow-form-reset", false, window, cx),
                                     )
                                     .child(action_glow(
                                         primary,
@@ -1737,7 +1686,8 @@ impl WidgetsApp {
                                                     .title("Saved"),
                                                     cx,
                                                 );
-                                            })),
+                                            }))
+                                            .glow("btn-glow-form-save", false, window, cx),
                                     )),
                             ),
                     ),
@@ -1835,7 +1785,7 @@ impl WidgetsApp {
 
     // -- page: data --------------------------------------------------------
 
-    fn data_page(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn data_page(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let muted = theme.muted_foreground;
         let border = theme.border;
@@ -2087,7 +2037,8 @@ impl WidgetsApp {
                                             Button::new("badge-bell")
                                                 .icon(IconName::Bell)
                                                 .outline()
-                                                .tooltip("Eight notifications"),
+                                                .tooltip("Eight notifications")
+                                                .glow("btn-glow-badge-bell", false, window, cx),
                                         ),
                                     )
                                     .child(
@@ -2095,12 +2046,18 @@ impl WidgetsApp {
                                             Button::new("badge-dot")
                                                 .icon(IconName::Inbox)
                                                 .outline()
-                                                .tooltip("One unread item"),
+                                                .tooltip("One unread item")
+                                                .glow("btn-glow-badge-dot", false, window, cx),
                                         ),
                                     )
-                                    .child(Badge::new().count(120).max(99).child(
-                                        Button::new("badge-inbox").icon(IconName::Bell).outline(),
-                                    )),
+                                    .child(
+                                        Badge::new().count(120).max(99).child(
+                                            Button::new("badge-inbox")
+                                                .icon(IconName::Bell)
+                                                .outline()
+                                                .glow("btn-glow-badge-inbox", false, window, cx),
+                                        ),
+                                    ),
                             )
                             .child(
                                 row()
@@ -2154,9 +2111,10 @@ impl WidgetsApp {
 
     // -- page: feedback ----------------------------------------------------
 
-    fn feedback_page(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn feedback_page(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let muted = theme.muted_foreground;
+        let primary = theme.primary;
 
         div()
             .flex()
@@ -2215,7 +2173,8 @@ impl WidgetsApp {
                                     .primary()
                                     .on_click(cx.listener(|_, _, window, cx| {
                                         open_create_dialog(window, cx);
-                                    })),
+                                    }))
+                                    .glow("btn-glow-open-dialog", false, window, cx),
                             )
                             .child(
                                 Button::new("open-alert")
@@ -2223,7 +2182,8 @@ impl WidgetsApp {
                                     .danger()
                                     .on_click(cx.listener(|_, _, window, cx| {
                                         open_delete_alert(window, cx);
-                                    })),
+                                    }))
+                                    .glow("btn-glow-open-alert", false, window, cx),
                             )
                             .child(
                                 Button::new("open-sheet")
@@ -2231,7 +2191,8 @@ impl WidgetsApp {
                                     .outline()
                                     .on_click(cx.listener(|_, _, window, cx| {
                                         open_inspector(window, cx);
-                                    })),
+                                    }))
+                                    .glow("btn-glow-open-sheet", false, window, cx),
                             )
                             .child(
                                 Button::new("toast-info")
@@ -2244,7 +2205,8 @@ impl WidgetsApp {
                                             .title("Heads up"),
                                             cx,
                                         );
-                                    })),
+                                    }))
+                                    .glow("btn-glow-toast-info", false, window, cx),
                             )
                             .child(
                                 Button::new("toast-success")
@@ -2257,7 +2219,8 @@ impl WidgetsApp {
                                             .title("Theme applied"),
                                             cx,
                                         );
-                                    })),
+                                    }))
+                                    .glow("btn-glow-toast-success", false, window, cx),
                             )
                             .child(
                                 Button::new("toast-error")
@@ -2282,14 +2245,20 @@ impl WidgetsApp {
                                 Button::new("tooltip-button")
                                     .label("Hover for tooltip")
                                     .outline()
-                                    .tooltip("Tooltips inherit the Lace tooltip pair."),
+                                    .tooltip("Tooltips inherit the Lace tooltip pair.")
+                                    .glow("btn-glow-tooltip", false, window, cx),
                             )
                             .child(
                                 Popover::new("popover-demo")
                                     .trigger(
                                         Button::new("popover-trigger")
                                             .label("Popover")
-                                            .outline(),
+                                            .outline()
+                                            .glow_hover(
+                                                "btn-glow-popover",
+                                                false,
+                                                primary,
+                                            ),
                                     )
                                     .content(|_, _, cx| {
                                         let muted = cx.theme().muted_foreground;
@@ -2314,6 +2283,7 @@ impl WidgetsApp {
                                 Button::new("menu-trigger")
                                     .label("Dropdown menu")
                                     .outline()
+                                    .glow_hover("btn-glow-menu", false, primary)
                                     .dropdown_menu(|menu, _, _| {
                                         menu.item(
                                             PopupMenuItem::new("Duplicate")
@@ -2406,7 +2376,8 @@ impl WidgetsApp {
                                                 .icon(IconName::Plus)
                                                 .on_click(cx.listener(|_, _, window, cx| {
                                                     open_create_dialog(window, cx);
-                                                })),
+                                                }))
+                                                .glow("btn-glow-empty-create", false, window, cx),
                                         ),
                                     ),
                             ),
@@ -2632,7 +2603,7 @@ impl Render for WidgetsApp {
             .bg(background)
             .text_color(foreground)
             .font_family(".SystemUIFont")
-            .child(self.header(cx))
+            .child(self.header(window, cx))
             .child(
                 div()
                     .flex_1()

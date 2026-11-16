@@ -17,6 +17,8 @@
 //!   paints a running gpui-kit app with Lace's tokens.
 //! - [`base_style`] *(feature `gpui-kit`)* — LaceStyle's flat widget layer:
 //!   derived outlines, state steps, focus ring, scrollbar and slider mixes.
+//! - [`button`] *(feature `gpui-kit`)* — theme-driven button halos: an accent
+//!   hover glow plus a denser press glow from one call, no view state needed.
 //! - [`geometry`] *(feature `gpui-kit`)* — an application-side dock skin:
 //!   gaps, rounded panels, outlines, shadow/glow and configurable splitters.
 //!
@@ -45,6 +47,9 @@ pub mod themes;
 
 #[cfg(feature = "gpui-kit")]
 pub mod base_style;
+
+#[cfg(feature = "gpui-kit")]
+pub mod button;
 
 #[cfg(feature = "gpui-kit")]
 pub mod skin;

@@ -17,6 +17,16 @@ gpui-kit = ["dep:gpui-kit"]
 [dependencies]
 gpui-kit = { version = "0.8", optional = true }
 
+[dev-dependencies]
+lace-widgets = { path = "lace-widgets" }
+
+[workspace]
+members = [".", "lace-widgets"]
+
+[[example]]
+name = "buttons"
+required-features = ["gpui-kit"]
+
 [[example]]
 name = "gallery"
 required-features = ["gpui-kit"]

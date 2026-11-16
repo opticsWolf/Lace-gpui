@@ -225,6 +225,28 @@ fn geometry_passthrough() {
 }
 
 // -----------------------------------------------------------------------
+// 12b. Button radius: follows the control radius unless the theme pins it.
+// -----------------------------------------------------------------------
+#[test]
+fn button_radius_override() {
+    use lace_gpui::engine::ThemeSpec;
+
+    // No preset pins it, so it tracks the control radius.
+    let midnight = build(by_name("midnight").unwrap());
+    assert!((midnight.button_radius - midnight.control_radius).abs() < 1e-9);
+
+    // A theme override wins and leaves the other radii alone.
+    let spec = ThemeSpec {
+        button_radius: Some(3.0),
+        ..*by_name("midnight").unwrap()
+    };
+    let t = build(&spec);
+    assert!((t.button_radius - 3.0).abs() < 1e-9);
+    assert!((t.control_radius - 4.0).abs() < 1e-9);
+    assert!((t.corner_radius - 4.0).abs() < 1e-9);
+}
+
+// -----------------------------------------------------------------------
 // 13. spec_from_hex: the five-seed path builds a coherent theme.
 // -----------------------------------------------------------------------
 #[test]

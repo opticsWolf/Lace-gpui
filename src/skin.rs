@@ -9,13 +9,15 @@
 //! initialized theme already had — so a Lace theme over gpui-kit reads as
 //! Lace's palette wearing gpui's widgets.
 
+use gpui_kit::base::ScrollbarMode;
 use gpui_kit::component::dock::PanelStyle;
 use gpui_kit::component::theme::{Theme, ThemeTokens};
-use gpui_kit::base::ScrollbarMode;
 use gpui_kit::gpui::{px, rgba, App, Hsla};
 
+use crate::base_style::INDICATOR_FLOOR_SCALE;
 use crate::color::{self, Rgba as Lace};
-use crate::engine::{Scrollbar, ThemeSpec, Tokens, depth_steps};
+use crate::contrast::{contrast_target, Role};
+use crate::engine::{depth_steps, Contrast, Scrollbar, ThemeSpec, Tokens};
 
 /// sRGB `[r, g, b, a]` -> gpui `Hsla`.
 pub fn hsla(c: Lace) -> Hsla {
@@ -82,14 +84,34 @@ pub fn apply_to_theme_color(colors: &mut gpui_kit::component::theme::ThemeColor,
 
     // --- status colours and their buttons ---
     let status = [
-        (t.error, &mut colors.danger, &mut colors.danger_foreground,
-            &mut colors.danger_hover, &mut colors.danger_active),
-        (t.warning, &mut colors.warning, &mut colors.warning_foreground,
-            &mut colors.warning_hover, &mut colors.warning_active),
-        (t.success, &mut colors.success, &mut colors.success_foreground,
-            &mut colors.success_hover, &mut colors.success_active),
-        (t.info, &mut colors.info, &mut colors.info_foreground,
-            &mut colors.info_hover, &mut colors.info_active),
+        (
+            t.error,
+            &mut colors.danger,
+            &mut colors.danger_foreground,
+            &mut colors.danger_hover,
+            &mut colors.danger_active,
+        ),
+        (
+            t.warning,
+            &mut colors.warning,
+            &mut colors.warning_foreground,
+            &mut colors.warning_hover,
+            &mut colors.warning_active,
+        ),
+        (
+            t.success,
+            &mut colors.success,
+            &mut colors.success_foreground,
+            &mut colors.success_hover,
+            &mut colors.success_active,
+        ),
+        (
+            t.info,
+            &mut colors.info,
+            &mut colors.info_foreground,
+            &mut colors.info_hover,
+            &mut colors.info_active,
+        ),
     ];
     for (base, fill, fg, hover, active) in status {
         *fill = hsla(base);
@@ -98,14 +120,34 @@ pub fn apply_to_theme_color(colors: &mut gpui_kit::component::theme::ThemeColor,
         *active = hsla(shade(base));
     }
     let buttons = [
-        (t.error, &mut colors.button_danger, &mut colors.button_danger_foreground,
-            &mut colors.button_danger_hover, &mut colors.button_danger_active),
-        (t.warning, &mut colors.button_warning, &mut colors.button_warning_foreground,
-            &mut colors.button_warning_hover, &mut colors.button_warning_active),
-        (t.success, &mut colors.button_success, &mut colors.button_success_foreground,
-            &mut colors.button_success_hover, &mut colors.button_success_active),
-        (t.info, &mut colors.button_info, &mut colors.button_info_foreground,
-            &mut colors.button_info_hover, &mut colors.button_info_active),
+        (
+            t.error,
+            &mut colors.button_danger,
+            &mut colors.button_danger_foreground,
+            &mut colors.button_danger_hover,
+            &mut colors.button_danger_active,
+        ),
+        (
+            t.warning,
+            &mut colors.button_warning,
+            &mut colors.button_warning_foreground,
+            &mut colors.button_warning_hover,
+            &mut colors.button_warning_active,
+        ),
+        (
+            t.success,
+            &mut colors.button_success,
+            &mut colors.button_success_foreground,
+            &mut colors.button_success_hover,
+            &mut colors.button_success_active,
+        ),
+        (
+            t.info,
+            &mut colors.button_info,
+            &mut colors.button_info_foreground,
+            &mut colors.button_info_hover,
+            &mut colors.button_info_active,
+        ),
     ];
     for (base, fill, fg, hover, active) in buttons {
         *fill = hsla(base);
@@ -212,7 +254,24 @@ pub fn apply_tokens(theme: &mut Theme, t: &Tokens) {
     apply_to_theme_color(&mut theme.colors, t);
     // Keep the legacy resolved tokens in step with the colors we wrote.
     theme.tokens = ThemeTokens::from(&theme.colors);
-    theme.radius = px(t.control_radius as f32);
+    // Outline visibility, without the depth pass: the palette's border is a
+    // translucent dock-chrome value, and composited onto a 1px control edge
+    // it all but vanishes (see `BaseStyle::apply`). Give the shared control
+    // slot the indicator treatment — a text-mixed stroke lifted to the UI
+    // floor — so Default buttons and fields keep a findable edge in Theme
+    // mode too. Structural `border` stays at chassis value; `LaceBase`
+    // re-derives this slot from the spec's own contrast level.
+    let ui = contrast_target(Role::Ui, Contrast::Normal);
+    let stroke = color::mix(t.input_bg, t.text, t.outline_strength);
+    theme.colors.input = hsla(color::ensure_contrast(
+        stroke,
+        t.panel_bg,
+        ui * INDICATOR_FLOOR_SCALE,
+    ));
+    // gpui-kit has one control-radius slot, and stock buttons read it
+    // (`ButtonRounded::Medium`); the Lace button radius owns that slot, so a
+    // theme override re-rounds every stock button with no widget code.
+    theme.radius = px(t.button_radius as f32);
     theme.radius_lg = px(t.corner_radius as f32);
     theme.scrollbar_mode = match t.scrollbar {
         Scrollbar::Thin => ScrollbarMode::Hover,
@@ -403,17 +462,55 @@ mod tests {
     }
 
     #[test]
+    fn control_edge_stays_findable() {
+        // The transferred visibility rule: the shared control slot (Default
+        // button hairlines, field edges) must be opaque and hold the UI
+        // floor against the panel — the raw translucent border does not.
+        use gpui_kit::gpui::Rgba as GpuiRgba;
+
+        for name in ["midnight", "light", "cyberpunk_neon"] {
+            let t = crate::build(by_name(name).unwrap());
+            let mut theme = Theme::default();
+            apply_tokens(&mut theme, &t);
+            let input = theme.colors.input;
+            assert!(
+                (input.a - 1.0).abs() < 1e-6,
+                "{name}: control edge must be opaque"
+            );
+            let c: GpuiRgba = input.into();
+            let back = [
+                (c.r * 255.0).round() as u8,
+                (c.g * 255.0).round() as u8,
+                (c.b * 255.0).round() as u8,
+                255,
+            ];
+            let ratio = color::contrast_ratio(back, t.panel_bg);
+            let floor = contrast_target(Role::Ui, Contrast::Normal) * INDICATOR_FLOOR_SCALE;
+            assert!(
+                ratio + 1e-6 >= floor,
+                "{name}: control edge {ratio:.2} below floor {floor:.2}"
+            );
+        }
+    }
+
+    #[test]
     fn scrollbar_mapping() {
         assert!(matches!(
             scrollbar_mode(Scrollbar::Expanding),
             ScrollbarMode::Scrolling
         ));
-        assert!(matches!(scrollbar_mode(Scrollbar::Fusion), ScrollbarMode::Always));
+        assert!(matches!(
+            scrollbar_mode(Scrollbar::Fusion),
+            ScrollbarMode::Always
+        ));
     }
 
     #[test]
     fn chrome_follows_geometry() {
-        assert_eq!(dock_chrome(by_name("cyberpunk_neon").unwrap()), PanelStyle::TabBar);
+        assert_eq!(
+            dock_chrome(by_name("cyberpunk_neon").unwrap()),
+            PanelStyle::TabBar
+        );
         assert_eq!(dock_chrome(by_name("midnight").unwrap()), PanelStyle::Auto);
     }
 

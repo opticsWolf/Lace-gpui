@@ -3365,6 +3365,16 @@ name = "lace-gpui"
 version = "0.0.2"
 dependencies = [
  "gpui-kit",
+ "lace-widgets",
+]
+
+[[package]]
+name = "lace-widgets"
+version = "0.0.1"
+dependencies = [
+ "gpui-kit",
+ "lace-gpui",
+ "lyon_tessellation",
 ]
 
 [[package]]

@@ -255,7 +255,7 @@ impl BaseStyle {
             t,
             outline_level,
             Contrast::Normal,
-            t.control_radius,
+            t.button_radius,
             t.corner_radius,
         )
     }
@@ -267,7 +267,7 @@ impl BaseStyle {
             t,
             outline_level,
             spec.contrast,
-            spec.control_radius,
+            spec.button_radius.unwrap_or(spec.control_radius),
             spec.corner_radius,
         )
     }

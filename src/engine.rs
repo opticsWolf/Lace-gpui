@@ -186,8 +186,13 @@ pub struct ThemeSpec {
     /// bars, sidebar) stops short of pure white or black. A palette may opt
     /// out (midnight keeps white).
     pub keep_tint: bool,
-    /// Corner radius of every control; 0 = square.
+    /// Corner radius of every control; 0 = square. This is also the
+    /// button radius unless the theme sets [`ThemeSpec::button_radius`].
     pub control_radius: f64,
+    /// Button corner radius. `None` (the default) follows `control_radius`;
+    /// `Some(px)` overrides it — PySide Lace's independent
+    /// `button_corner_radius` knob, which its presets left at the fixed 3px.
+    pub button_radius: Option<f64>,
     /// Dock-area card corner radius.
     pub corner_radius: f64,
     /// Tab corner radius.
@@ -232,6 +237,7 @@ impl ThemeSpec {
     hover_mode: HoverMode::Lighter,
     keep_tint: false,
     control_radius: 4.0,
+    button_radius: None,
     corner_radius: 2.0,
     tab_radius: 0.0,
     border_width: 0.0,
@@ -382,6 +388,9 @@ pub struct Tokens {
     pub is_light: bool,
     pub scrollbar: Scrollbar,
     pub control_radius: f64,
+    /// Resolved button radius: the spec's `button_radius`, or
+    /// `control_radius` when the theme leaves it unset.
+    pub button_radius: f64,
     pub corner_radius: f64,
     pub tab_radius: f64,
     pub border_width: f64,
@@ -712,6 +721,7 @@ pub fn build_unenforced(spec: &ThemeSpec) -> (Tokens, Explicit) {
         is_light,
         scrollbar: spec.scrollbar,
         control_radius: spec.control_radius,
+        button_radius: spec.button_radius.unwrap_or(spec.control_radius),
         corner_radius: spec.corner_radius,
         tab_radius: spec.tab_radius,
         border_width: spec.border_width,
