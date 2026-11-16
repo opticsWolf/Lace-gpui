@@ -41,10 +41,10 @@ impl Render for Root {
         let row = div().flex().flex_row().gap_2();
         let row = if std::env::var("REPRO_IDENT").is_ok() {
             row.children(
-                (0..20).map(|i| wrap(Button::new(("b", i)).label(format!("B{i}")), &format!("b{i}"))),
+                (0..20usize).map(|i| wrap(Button::new(("b", i)).label(format!("B{i}")), &format!("b{i}"))),
             )
         } else {
-            row.children((0..20).map(|i| Button::new(("b", i)).label(format!("B{i}"))))
+            row.children((0..20usize).map(|i| Button::new(("b", i)).label(format!("B{i}"))))
         };
         div().flex().flex_col().gap_2().child(row)
     }

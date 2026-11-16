@@ -28,6 +28,10 @@ name = "buttons"
 required-features = ["gpui-kit"]
 
 [[example]]
+name = "button-group-repro"
+required-features = ["gpui-kit"]
+
+[[example]]
 name = "gallery"
 required-features = ["gpui-kit"]
 
