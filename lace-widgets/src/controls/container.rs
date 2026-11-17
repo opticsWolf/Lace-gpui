@@ -215,7 +215,7 @@ impl RenderOnce for TabWidget {
             .min_h_0()
             .border_1()
             .border_color(line)
-            .rounded(px(style.corner_radius))
+            .rounded(px(style.frame_radius))
             .p(px(6.))
             .children(self.pane);
         let el = div().flex().size_full();
@@ -237,7 +237,7 @@ pub fn frame_box(style: &LaceStyle, s: State) -> Div {
     div()
         .border_1()
         .border_color(hsla(rules::frame_line(style, s)))
-        .rounded(px(style.corner_radius))
+        .rounded(px(style.frame_radius))
 }
 
 /// A `QGroupBox`: a title over a rounded frame.

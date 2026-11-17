@@ -17,6 +17,7 @@ use gpui_kit::gpui::{
 
 use super::button::apply_face;
 use super::interaction::{child_id, Interaction};
+use super::margin::Margin;
 use crate::glyph::{self, Dir};
 use crate::style::rules::{self, ButtonKind};
 use crate::style::{hsla, paint, ActiveStyle, LaceStyle, State};
@@ -54,12 +55,26 @@ pub struct LineEdit {
     disabled: bool,
     read_only: bool,
     forced: Option<State>,
+    fill: Option<Margin>,
 }
 
 impl LineEdit {
     /// A line edit over `state` (create it with `InputState::new`).
     pub fn new(id: impl Into<ElementId>, state: &Entity<InputState>) -> Self {
-        Self { id: id.into(), state: state.clone(), disabled: false, read_only: false, forced: None }
+        Self { id: id.into(), state: state.clone(), disabled: false, read_only: false, forced: None, fill: None }
+    }
+
+    /// Fill the parent, height included, with no margin (an item view's
+    /// editor: Qt's `updateEditorGeometry` gives it the whole cell).
+    pub fn fill(self) -> Self {
+        self.fill_with(Margin::ZERO)
+    }
+
+    /// Fill the parent less `margin`: one number for all sides, `(h, v)`,
+    /// or `[left, top, right, bottom]`.
+    pub fn fill_with(mut self, margin: impl Into<Margin>) -> Self {
+        self.fill = Some(margin.into());
+        self
     }
 
     /// Disable.
@@ -82,7 +97,19 @@ impl LineEdit {
 }
 
 impl RenderOnce for LineEdit {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        // A margin is a box around the filled widget, so hover, focus and
+        // clicks stay on the widget itself.
+        if let Some(m) = self.fill.filter(|m| !m.is_zero()) {
+            self.fill = Some(Margin::ZERO);
+            return m.wrap(self).into_any_element();
+        }
+        self.render_face(window, cx).into_any_element()
+    }
+}
+
+impl LineEdit {
+    fn render_face(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let focus = self.state.read(cx).focus_handle(cx);
         let ix = Interaction::new(self.id.clone(), window, cx).with_focus(focus).force(self.forced);
         // Fields show focus however it arrived.
@@ -98,7 +125,8 @@ impl RenderOnce for LineEdit {
                         .appearance(false)
                         .disabled(self.disabled || self.read_only),
                 ),
-            );
+            )
+            .when(self.fill.is_some(), |d| d.size_full());
         ix.bind(el, true)
     }
 }
@@ -127,6 +155,7 @@ pub struct ComboBox {
     disabled: bool,
     forced: Option<State>,
     on_select: Option<Select>,
+    fill: Option<Margin>,
 }
 
 impl ComboBox {
@@ -140,7 +169,21 @@ impl ComboBox {
             disabled: false,
             forced: None,
             on_select: None,
+            fill: None,
         }
+    }
+
+    /// Fill the parent, height included, with no margin (an item view's
+    /// editor: Qt's `updateEditorGeometry` gives it the whole cell).
+    pub fn fill(self) -> Self {
+        self.fill_with(Margin::ZERO)
+    }
+
+    /// Fill the parent less `margin`: one number for all sides, `(h, v)`,
+    /// or `[left, top, right, bottom]`.
+    pub fn fill_with(mut self, margin: impl Into<Margin>) -> Self {
+        self.fill = Some(margin.into());
+        self
     }
 
     /// The current item.
@@ -175,7 +218,19 @@ impl ComboBox {
 }
 
 impl RenderOnce for ComboBox {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        // A margin is a box around the filled widget, so hover, focus and
+        // clicks stay on the widget itself.
+        if let Some(m) = self.fill.filter(|m| !m.is_zero()) {
+            self.fill = Some(Margin::ZERO);
+            return m.wrap(self).into_any_element();
+        }
+        self.render_face(window, cx).into_any_element()
+    }
+}
+
+impl ComboBox {
+    fn render_face(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let ui = window.use_keyed_state(child_id(&self.id, "ui"), cx, |_, _| ComboUi::default());
         let mut ix = Interaction::new(self.id.clone(), window, cx).force(self.forced);
         ix = match &self.editable {
@@ -254,6 +309,7 @@ impl RenderOnce for ComboBox {
             .size_full(),
         );
 
+        let body = body.when(self.fill.is_some(), |d| d.size_full());
         let toggle = ui.clone();
         let body = ix.bind(body, s.disabled);
         let body = if s.disabled {
@@ -383,6 +439,7 @@ pub struct SpinBox {
     forced: Option<State>,
     forced_part: Option<(bool, State)>,
     on_change: Option<Change>,
+    fill: Option<Margin>,
 }
 
 impl SpinBox {
@@ -401,7 +458,21 @@ impl SpinBox {
             forced: None,
             forced_part: None,
             on_change: None,
+            fill: None,
         }
+    }
+
+    /// Fill the parent, height included, with no margin (an item view's
+    /// editor: Qt's `updateEditorGeometry` gives it the whole cell).
+    pub fn fill(self) -> Self {
+        self.fill_with(Margin::ZERO)
+    }
+
+    /// Fill the parent less `margin`: one number for all sides, `(h, v)`,
+    /// or `[left, top, right, bottom]`.
+    pub fn fill_with(mut self, margin: impl Into<Margin>) -> Self {
+        self.fill = Some(margin.into());
+        self
     }
 
     /// Range.
@@ -462,7 +533,19 @@ impl SpinBox {
 }
 
 impl RenderOnce for SpinBox {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        // A margin is a box around the filled widget, so hover, focus and
+        // clicks stay on the widget itself.
+        if let Some(m) = self.fill.filter(|m| !m.is_zero()) {
+            self.fill = Some(Margin::ZERO);
+            return m.wrap(self).into_any_element();
+        }
+        self.render_face(window, cx).into_any_element()
+    }
+}
+
+impl SpinBox {
+    fn render_face(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let ix = Interaction::new(self.id.clone(), window, cx)
             .focusable(&self.id, window, cx)
             .force(self.forced.map(|f| State { hovered: false, pressed: false, ..f }));
@@ -524,11 +607,15 @@ impl RenderOnce for SpinBox {
         }
         let _ = h;
 
+        let el = el.when(self.fill.is_some(), |d| d.size_full());
         let el = ix.bind(el, s.disabled);
         match self.on_change {
             Some(f) if !s.disabled => {
                 let key = f.clone();
                 el.on_scroll_wheel(move |ev: &ScrollWheelEvent, window, cx| {
+                    // The wheel is the spin box's: the view beneath must not
+                    // scroll as well (Qt accepts the wheel event).
+                    cx.stop_propagation();
                     let dy = f32::from(ev.delta.pixel_delta(px(20.)).y);
                     if dy.abs() > 0.0 {
                         f(clamp(if dy > 0.0 { value + step } else { value - step }), window, cx);

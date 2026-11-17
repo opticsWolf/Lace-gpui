@@ -324,6 +324,8 @@ impl RenderOnce for Slider {
             Some(f) => {
                 let key = f.clone();
                 el.on_scroll_wheel(move |ev: &ScrollWheelEvent, window, cx| {
+                    // Accept the wheel, so a view beneath does not scroll too.
+                    cx.stop_propagation();
                     let dy = f32::from(ev.delta.pixel_delta(px(20.)).y);
                     if dy.abs() > 0.0 {
                         f(clamp(if dy > 0.0 { value + step } else { value - step }), window, cx);
@@ -650,17 +652,28 @@ impl RenderOnce for Dial {
         let el = div().id(self.id.clone()).flex_none().size(px(self.diameter)).child(paint);
         let el = ix.bind(el, s.disabled);
         match self.on_change.filter(|_| !s.disabled) {
-            Some(f) => el.on_key_down(move |ev, window, cx| {
-                let v = match ev.keystroke.key.as_str() {
-                    "right" | "up" => value + step,
-                    "left" | "down" => value - step,
-                    "pageup" => value + step * 10.0,
-                    "pagedown" => value - step * 10.0,
-                    _ => return,
-                };
-                f(clamp(v), window, cx);
-                cx.stop_propagation();
-            }),
+            Some(f) => {
+                let wheel = f.clone();
+                el.on_key_down(move |ev, window, cx| {
+                    let v = match ev.keystroke.key.as_str() {
+                        "right" | "up" => value + step,
+                        "left" | "down" => value - step,
+                        "pageup" => value + step * 10.0,
+                        "pagedown" => value - step * 10.0,
+                        _ => return,
+                    };
+                    f(clamp(v), window, cx);
+                    cx.stop_propagation();
+                })
+                .on_scroll_wheel(move |ev: &ScrollWheelEvent, window, cx| {
+                    // QDial takes the wheel; the view beneath must not scroll.
+                    cx.stop_propagation();
+                    let dy = f32::from(ev.delta.pixel_delta(px(20.)).y);
+                    if dy.abs() > 0.0 {
+                        wheel(clamp(if dy > 0.0 { value + step } else { value - step }), window, cx);
+                    }
+                })
+            }
             None => el,
         }
     }

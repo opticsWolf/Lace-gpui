@@ -148,6 +148,9 @@ pub struct LaceStyle {
     pub control_radius: f32,
     /// Corner radius of dock cards; popups blend toward it.
     pub corner_radius: f32,
+    /// Corner radius of frames: group boxes, item views, text edits
+    /// (Lace's `RoundedArea`). Starts at `control_radius`, as in Lace.
+    pub frame_radius: f32,
     /// Keyboard focus ring width, px.
     pub focus_width: f32,
     /// Share of `Text` mixed over a fill for its 1 px outline.
@@ -158,6 +161,17 @@ pub struct LaceStyle {
     pub field_outline: bool,
     /// Scrollbar behaviour.
     pub scrollbar: ScrollbarMode,
+    /// Width a scrollbar reserves (`PM_ScrollBarExtent`), px; also its
+    /// thickness when hovered.
+    pub scrollbar_width: f32,
+    /// Handle thickness of an expanding bar at rest, px.
+    pub scrollbar_rest: f32,
+    /// Time an expanding bar takes to grow or shrink, ms; 0 snaps.
+    pub scrollbar_grow_ms: f32,
+    /// Whether item views lay their scrollbars over the content, keeping
+    /// only the slim resting width free, instead of reserving the full
+    /// `scrollbar_width` beside it.
+    pub scrollbar_overlay: bool,
     /// The theme's contrast level.
     pub contrast: Contrast,
     /// The level outlines are held to (`outline_contrast`, `auto` → `contrast`,
@@ -186,6 +200,10 @@ impl LaceStyle {
         } else {
             spec.contrast
         };
+        let scrollbar = match spec.scrollbar {
+            Scrollbar::Thin => ScrollbarMode::Thin,
+            _ => ScrollbarMode::Expanding,
+        };
         Self {
             name: spec.name,
             is_light: t.is_light,
@@ -193,14 +211,16 @@ impl LaceStyle {
             disabled,
             control_radius: spec.button_radius.unwrap_or(spec.control_radius).max(0.0) as f32,
             corner_radius: spec.corner_radius.max(0.0) as f32,
+            frame_radius: spec.control_radius.max(0.0) as f32,
+            scrollbar_width: scrollbar.extent(),
+            scrollbar_rest: rules::EXPANDING_REST,
+            scrollbar_grow_ms: 120.0,
+            scrollbar_overlay: true,
             focus_width: spec.focus_width.max(0.0) as f32,
             outline_strength: spec.outline_strength,
             splitter_length: 50.0,
             field_outline: true,
-            scrollbar: match spec.scrollbar {
-                Scrollbar::Thin => ScrollbarMode::Thin,
-                _ => ScrollbarMode::Expanding,
-            },
+            scrollbar,
             contrast: spec.contrast,
             outline_level,
             font_size: 12.0,
@@ -242,6 +262,16 @@ impl LaceStyle {
     /// Contrast floor of body text.
     pub fn text_ratio(&self) -> f64 {
         contrast_target(Role::Text, self.contrast)
+    }
+
+    /// How far a frame's content keeps from its edges so nothing reaches
+    /// into a rounded corner, px.
+    ///
+    /// gpui clips to rectangles only, so where Lace masks a view to its
+    /// rounded shape, the content here is inset instead: by `r·(1 − 1/√2)`,
+    /// the inner rectangle's corner then lies exactly on the arc.
+    pub fn frame_inset(&self, radius: f32) -> f32 {
+        (radius * (1.0 - std::f32::consts::FRAC_1_SQRT_2)).ceil()
     }
 
     /// A popup's corner radius: a third of the way from control to card.

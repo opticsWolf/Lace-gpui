@@ -29,7 +29,7 @@ use gpui_kit::gpui::{
 
 use super::model::{ItemModel, ModelEvent, NodeId, Value};
 use crate::controls::{
-    check_indicator, header_section, item_row_div, ComboBox, Interaction, LineEdit, ProgressBar,
+    check_indicator, header_section, item_row_div, ComboBox, Interaction, LineEdit, Margin, ProgressBar,
     PushButton, Scrollbar, Sort, SpinBox,
 };
 use crate::glyph::{self, Dir};
@@ -183,11 +183,14 @@ pub struct Column {
     pub delegate: Delegate,
     /// Alignment.
     pub align: Align,
+    /// Margin of the editor or button delegate inside the cell; `None`
+    /// takes the view's (see [`ItemView::delegate_margins`]).
+    pub margin: Option<Margin>,
 }
 
 impl Default for Column {
     fn default() -> Self {
-        Self { resize: Resize::Interactive(120.0), delegate: Delegate::Text, align: Align::Auto }
+        Self { resize: Resize::Interactive(120.0), delegate: Delegate::Text, align: Align::Auto, margin: None }
     }
 }
 
@@ -216,6 +219,12 @@ impl Column {
     /// With `align`.
     pub fn align(mut self, align: Align) -> Self {
         self.align = align;
+        self
+    }
+    /// The editor / button delegate keeps `margin` from the cell edges:
+    /// one number for all sides, `(h, v)`, or `[left, top, right, bottom]`.
+    pub fn margin(mut self, margin: impl Into<Margin>) -> Self {
+        self.margin = Some(margin.into());
         self
     }
 }
@@ -274,6 +283,11 @@ pub struct ItemView {
     header: bool,
     grid: bool,
     root_decorated: bool,
+    radius: Option<f32>,
+    bar_width: Option<f32>,
+    overlay: Option<bool>,
+    editor_margin: Margin,
+    button_margin: Margin,
     id: ElementId,
     _observe: Subscription,
 }
@@ -314,6 +328,11 @@ impl ItemView {
             header: mode != Mode::List,
             grid: mode == Mode::Table,
             root_decorated: true,
+            radius: None,
+            bar_width: None,
+            overlay: None,
+            editor_margin: Margin::all(1.0),
+            button_margin: Margin::new(4.0, 2.0, 4.0, 2.0),
             id,
             _observe: observe,
         }
@@ -346,10 +365,24 @@ impl ItemView {
         self
     }
 
-    /// Alternate row colours.
+    /// Alternate row colours (`QAbstractItemView::setAlternatingRowColors`;
+    /// on by default for tables, off for trees and lists).
     pub fn alternating(mut self, on: bool) -> Self {
         self.alternating = on;
         self
+    }
+
+    /// Switch alternating row colours on a live view.
+    pub fn set_alternating(&mut self, on: bool, cx: &mut Context<Self>) {
+        if self.alternating != on {
+            self.alternating = on;
+            cx.notify();
+        }
+    }
+
+    /// Whether rows alternate their colours.
+    pub fn is_alternating(&self) -> bool {
+        self.alternating
     }
 
     /// Show the header.
@@ -368,6 +401,57 @@ impl ItemView {
     pub fn root_decorated(mut self, on: bool) -> Self {
         self.root_decorated = on;
         self
+    }
+
+    /// Corner radius of this view's frame, px (default: the style's
+    /// `frame_radius`).
+    pub fn corner_radius(mut self, r: f32) -> Self {
+        self.radius = Some(r.max(0.0));
+        self
+    }
+
+    /// Width of this view's scrollbars, px (default: the style's
+    /// `scrollbar_width`).
+    pub fn scrollbar_width(mut self, w: f32) -> Self {
+        self.bar_width = Some(w.max(2.0));
+        self
+    }
+
+    /// Default margins inside a cell: of an open editor (1 px; Qt gives it
+    /// the whole cell, 0) and of a button delegate (`[4, 2, 4, 2]`).
+    /// A column's [`Column::margin`] overrides both.
+    pub fn delegate_margins(mut self, editor: impl Into<Margin>, button: impl Into<Margin>) -> Self {
+        self.editor_margin = editor.into();
+        self.button_margin = button.into();
+        self
+    }
+
+    /// Lay the scrollbars over the content (default: the style's
+    /// `scrollbar_overlay`), keeping only their slim resting width free.
+    pub fn overlay_scrollbars(mut self, on: bool) -> Self {
+        self.overlay = Some(on);
+        self
+    }
+
+    fn bar_extent(&self, style: &LaceStyle) -> f32 {
+        self.bar_width.unwrap_or(style.scrollbar_width)
+    }
+
+    /// Width a bar takes from the layout: its slim resting width when it
+    /// overlays the content, else its full width.
+    fn bar_gutter(&self, style: &LaceStyle) -> f32 {
+        let extent = self.bar_extent(style);
+        let overlay = self.overlay.unwrap_or(style.scrollbar_overlay);
+        if overlay && style.scrollbar == crate::style::ScrollbarMode::Expanding {
+            (style.scrollbar_rest + 2.0).min(extent)
+        } else {
+            extent
+        }
+    }
+
+    /// Whether the rows overflow the viewport, so a vertical bar shows.
+    fn needs_vbar(&self) -> bool {
+        self.rows.len() as f32 * self.row_height > self.viewport.1 + 0.5
     }
 
     /// The model.
@@ -513,7 +597,8 @@ impl ItemView {
         if self.user_widths.len() != n {
             self.user_widths.resize(n, None);
         }
-        let avail = (self.viewport.0 - style.scrollbar.extent()).max(0.0);
+        // Nothing to scroll, nothing to reserve.
+        let avail = (self.viewport.0 - if self.needs_vbar() { self.bar_gutter(style) } else { 0.0 }).max(0.0);
         let mut widths = vec![0.0; n];
         let mut stretch = 0;
         for (c, w) in widths.iter_mut().enumerate() {
@@ -828,6 +913,11 @@ impl ItemView {
             Align::Auto => Align::Left,
             a => a,
         };
+        let is_button = matches!(spec.delegate, Delegate::Button(..));
+        let editor_margin = spec.margin.unwrap_or(self.editor_margin);
+        let button_margin = spec.margin.unwrap_or(self.button_margin);
+        let editor_open =
+            editing && matches!(spec.delegate, Delegate::Text | Delegate::Number { .. } | Delegate::Choice(_));
         let mut cell = div()
             .id(ElementId::NamedInteger(SharedString::from(format!("{}-c{c}", self.id_name())), id as u64))
             .w(px(w))
@@ -835,7 +925,9 @@ impl ItemView {
             .flex_none()
             .flex()
             .items_center()
-            .px(px(CELL_PAD))
+            // An open editor fills the cell, as Qt's updateEditorGeometry
+            // sets it to the whole option.rect.
+            .px(px(if editor_open || is_button { 0.0 } else { CELL_PAD }))
             .gap(px(4.))
             .overflow_hidden()
             .when(self.grid, |d| d.border_r_1().border_b_1().border_color(grid));
@@ -885,16 +977,18 @@ impl ItemView {
         let inner_w = (w - 2.0 * CELL_PAD).max(0.0);
         let content: AnyElement = match (&spec.delegate, editing) {
             (Delegate::Text, true) => match &self.editor {
-                Some(e) => div().flex_1().child(LineEdit::new(ElementId::Name("cell-editor".into()), e)).into_any_element(),
+                Some(e) => div().flex_1().h_full().child(LineEdit::new(ElementId::Name("cell-editor".into()), e).fill_with(editor_margin)).into_any_element(),
                 None => div().into_any_element(),
             },
             (Delegate::Number { min, max, step, decimals }, true) => div()
                 .flex_1()
+                .h_full()
                 .child(
                     SpinBox::new(ElementId::Name("cell-spin".into()), value.as_f64().unwrap_or(0.0))
                         .range(*min, *max)
                         .step(*step)
                         .decimals(*decimals)
+                        .fill_with(editor_margin)
                         .on_change(cx.processor(move |this, v: f64, _, cx| {
                             let old = this.model.read(cx).value(id, c);
                             let nv = if matches!(old, Value::Int(_)) { Value::Int(v.round() as i64) } else { Value::Float(v) };
@@ -907,9 +1001,11 @@ impl ItemView {
                 let list = choices.clone();
                 div()
                     .flex_1()
+                    .h_full()
                     .child(
                         ComboBox::new(ElementId::Name("cell-combo".into()), choices.iter().cloned())
                             .selected(current)
+                            .fill_with(editor_margin)
                             .on_select(cx.processor(move |this, i: usize, window, cx| {
                                 this.edit_cell(id, c, Value::Text(list[i].clone()), cx);
                                 this.editing = None;
@@ -965,16 +1061,16 @@ impl ItemView {
             }
             (Delegate::Button(label, f), _) => {
                 let f = f.clone();
+                // Qt paints a button delegate into option.rect less a small margin.
                 div()
                     .flex_1()
-                    .flex()
-                    .justify_center()
+                    .h_full()
                     .child(
                         PushButton::new(
                             ElementId::NamedInteger(SharedString::from(format!("{}-bt{c}", self.id_name())), id as u64),
                             label.clone(),
                         )
-                        .min_width(inner_w.min(64.0))
+                        .fill_with(button_margin)
                         .disabled(s.disabled)
                         .on_click(move |window, cx| f(id, window, cx)),
                     )
@@ -1083,7 +1179,10 @@ impl ItemView {
                 });
             row = row.child(ix.bind(section, !self.sorting));
         }
-        div().overflow_hidden().flex_none().child(row).into_any_element()
+        // An empty section runs on to the right edge, over the scrollbar's
+        // gutter too, so the header leaves no hole above the bar.
+        let filler = header_section(style, State::NORMAL, SharedString::default(), None).flex_none().w(px(4000.));
+        div().overflow_hidden().flex_none().child(row.child(filler)).into_any_element()
     }
 }
 
@@ -1095,8 +1194,10 @@ impl Render for ItemView {
         let n = self.model.read(cx).column_count();
         self.layout_columns(n, window, &style, cx);
         let total: f32 = self.widths.iter().sum();
-        let extent = style.scrollbar.extent();
-        let max_h = (total - (self.viewport.0 - extent)).max(0.0);
+        let extent = self.bar_extent(&style);
+        let gutter = self.bar_gutter(&style);
+        let v_gutter = if self.needs_vbar() { gutter } else { 0.0 };
+        let max_h = (total - (self.viewport.0 - v_gutter)).max(0.0);
         self.hscroll = self.hscroll.clamp(0.0, max_h);
 
         let rows = self.rows.len();
@@ -1113,6 +1214,7 @@ impl Render for ItemView {
             f64::from(self.viewport.1),
         )
         .vertical()
+        .width(extent)
         .on_scroll({
             let base = base.clone();
             cx.processor(move |_, v: f64, _, cx| {
@@ -1127,11 +1229,27 @@ impl Render for ItemView {
                 max_h as f64,
                 self.viewport.0 as f64,
             )
+            .width(extent)
             .on_scroll(cx.processor(|this, v: f64, _, cx| {
                 this.hscroll = v as f32;
                 cx.notify();
             }))
         });
+        // Each bar sits in a strip as wide as its gutter, anchored to the
+        // far edge and reaching back over the content as it grows.
+        let hbar = hbar.map(|bar| {
+            div()
+                .relative()
+                .flex_none()
+                .h(px(gutter))
+                .child(div().absolute().left_0().right_0().bottom_0().h(px(extent)).child(bar))
+        });
+        let vbar = div()
+            .relative()
+            .flex_none()
+            .w(px(gutter))
+            .h_full()
+            .child(div().absolute().top_0().bottom_0().right_0().w(px(extent)).child(vbar));
 
         let header = (self.header && self.mode != Mode::List).then(|| self.render_header(&style, window, cx));
         let measure = cx.entity().downgrade();
@@ -1141,7 +1259,7 @@ impl Render for ItemView {
             .min_h_0()
             .flex()
             .child(div().flex_1().min_w_0().h_full().child(list))
-            .when(f32::from(max.y) > 0.5, |d| d.child(vbar))
+            .when(self.needs_vbar() && f32::from(max.y) > 0.5, |d| d.child(vbar))
             .child(
                 canvas(
                     move |b, _, cx| {
@@ -1201,6 +1319,7 @@ impl Render for ItemView {
         .absolute()
         .size_full();
 
+        let radius = self.radius.unwrap_or(style.frame_radius);
         let focused = self.focus.contains_focused(window, cx);
         let line = if focused && window.last_input_was_keyboard() {
             rules::field(&style, State::focused()).line
@@ -1222,7 +1341,9 @@ impl Render for ItemView {
             .text_size(px(style.font_size))
             .border_1()
             .border_color(hsla(line.unwrap_or(pal.base)))
-            .rounded(px(style.corner_radius))
+            .rounded(px(radius))
+            // Keeps rows, header and bars out of the rounded corners.
+            .p(px(style.frame_inset((radius - 1.0).max(0.0))))
             .on_key_down(cx.listener(Self::on_key))
             .children(header)
             .child(body)

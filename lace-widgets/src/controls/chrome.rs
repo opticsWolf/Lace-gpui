@@ -12,7 +12,7 @@ use gpui_kit::gpui::{
 use super::interaction::{child_id, Interaction};
 use super::range::round_rect;
 use crate::glyph::{self, Dir};
-use crate::style::rules::{self, EXPANDING_REST, SPLITTER_WIDTH};
+use crate::style::rules::{self, SPLITTER_WIDTH};
 use crate::style::{hsla, ActiveStyle, LaceStyle, ScrollbarMode, State};
 
 fn rect(x: f32, y: f32, w: f32, h: f32) -> Bounds<Pixels> {
@@ -37,6 +37,28 @@ struct SplitUi {
     drag: Option<(usize, f32, Vec<f32>)>,
     /// Space shared by the panes (container minus handles), px.
     avail: f32,
+    /// The splitter's size as last laid out, px.
+    size: (f32, f32),
+    /// Whether cramping has turned it from its own orientation.
+    restacked: bool,
+    /// Pane fractions of the orientation not shown, kept for its return.
+    other_fracs: Option<Vec<f32>>,
+}
+
+/// Room beyond the threshold a restacked splitter needs before it turns
+/// back, px (Weave's `RESTACK_HYSTERESIS`).
+pub const RESTACK_HYSTERESIS: f32 = 40.0;
+
+/// Whether a splitter `extent` px long along its own axis stands restacked,
+/// given whether it was: below `threshold` it restacks; it returns only at
+/// `threshold + hysteresis`, so a drag across the line does not flip it on
+/// every pixel.
+pub fn restacked(extent: f32, was: bool, threshold: f32, hysteresis: f32) -> bool {
+    if was {
+        extent < threshold + hysteresis
+    } else {
+        extent < threshold
+    }
 }
 
 /// A `QSplitter` over any number of panes: each handle is
@@ -48,12 +70,14 @@ pub struct Splitter {
     vertical: bool,
     panes: Vec<(AnyElement, f32)>,
     forced: Option<State>,
+    restack: Option<f32>,
+    hysteresis: f32,
 }
 
 impl Splitter {
     /// Panes side by side (`Qt::Horizontal`).
     pub fn new(id: impl Into<ElementId>) -> Self {
-        Self { id: id.into(), vertical: false, panes: Vec::new(), forced: None }
+        Self { id: id.into(), vertical: false, panes: Vec::new(), forced: None, restack: None, hysteresis: RESTACK_HYSTERESIS }
     }
 
     /// Panes stacked (`Qt::Vertical`).
@@ -71,6 +95,22 @@ impl Splitter {
     /// Paint every handle in `state`.
     pub fn state(mut self, state: State) -> Self {
         self.forced = Some(state);
+        self
+    }
+
+    /// Restack (Weave's `WeaveSplitter(restack=px)`): when the splitter is
+    /// shorter than `threshold` px along its own axis, turn the panes the
+    /// other way, side by side becoming stacked and back. Each way keeps
+    /// the pane sizes the user last gave it.
+    pub fn restack(mut self, threshold: f32) -> Self {
+        self.restack = Some(threshold.max(0.0));
+        self
+    }
+
+    /// Extra room a restacked splitter needs before it turns back, px
+    /// (default [`RESTACK_HYSTERESIS`]).
+    pub fn restack_hysteresis(mut self, px: f32) -> Self {
+        self.hysteresis = px.max(0.0);
         self
     }
 }
@@ -101,13 +141,32 @@ impl RenderOnce for Splitter {
         let stretches: Vec<f32> = self.panes.iter().map(|p| p.1).collect();
         let ui = window.use_keyed_state(child_id(&self.id, "split"), cx, move |_, _| {
             let sum: f32 = stretches.iter().sum();
-            SplitUi { fracs: stretches.iter().map(|s| s / sum).collect(), drag: None, avail: 0.0 }
+            SplitUi { fracs: stretches.iter().map(|s| s / sum).collect(), ..Default::default() }
         });
         if ui.read(cx).fracs.len() != n {
-            ui.update(cx, |u, _| u.fracs = vec![1.0 / n.max(1) as f32; n]);
+            ui.update(cx, |u, _| {
+                u.fracs = vec![1.0 / n.max(1) as f32; n];
+                u.other_fracs = None;
+            });
+        }
+        // Restack from the size the splitter was last laid out at; its
+        // parent sets that size, so turning the panes does not change it.
+        let preferred = self.vertical;
+        if let Some(threshold) = self.restack.filter(|_| n >= 2) {
+            let (w, h) = ui.read(cx).size;
+            let extent = if preferred { h } else { w };
+            let was = ui.read(cx).restacked;
+            if extent > 0.0 && restacked(extent, was, threshold, self.hysteresis) != was {
+                ui.update(cx, |u, _| {
+                    u.restacked = !was;
+                    u.drag = None;
+                    let shown = u.other_fracs.take().filter(|f| f.len() == n).unwrap_or_else(|| u.fracs.clone());
+                    u.other_fracs = Some(std::mem::replace(&mut u.fracs, shown));
+                });
+            }
         }
         let style = cx.lace().clone();
-        let vertical = self.vertical;
+        let vertical = preferred != ui.read(cx).restacked;
         let fracs = ui.read(cx).fracs.clone();
         let dragging = ui.read(cx).drag.as_ref().map(|d| d.0);
 
@@ -155,10 +214,19 @@ impl RenderOnce for Splitter {
             canvas(
                 |_, _, _| (),
                 move |b, (), window, cx| {
-                    let total = if vertical { f32::from(b.size.height) } else { f32::from(b.size.width) };
+                    let size = (f32::from(b.size.width), f32::from(b.size.height));
+                    let total = if vertical { size.1 } else { size.0 };
                     let avail = (total - handles).max(1.0);
                     if (track.read(cx).avail - avail).abs() > 0.5 {
                         track.update(cx, |u, _| u.avail = avail);
+                    }
+                    let last = track.read(cx).size;
+                    if (last.0 - size.0).abs() > 0.5 || (last.1 - size.1).abs() > 0.5 {
+                        // A new size may restack: render again.
+                        track.update(cx, |u, cx| {
+                            u.size = size;
+                            cx.notify();
+                        });
                     }
                     let mv = track.clone();
                     window.on_mouse_event(move |ev: &MouseMoveEvent, phase, _, cx| {
@@ -207,6 +275,37 @@ pub const HANDLE_MIN: f32 = 20.0;
 struct BarUi {
     on_handle: bool,
     drag: Option<(f32, f64)>,
+    /// Growth of an expanding bar, 0 at rest to 1 hovered, as last shown.
+    grow: f32,
+    /// Where the running growth started, toward which end, and when.
+    tween: Option<(f32, bool, std::time::Instant)>,
+}
+
+impl BarUi {
+    /// Advance the growth toward `expanded` over `ms`; true while it runs.
+    fn step(&mut self, expanded: bool, ms: f32) -> bool {
+        let goal = if expanded { 1.0 } else { 0.0 };
+        if ms <= 0.0 {
+            self.grow = goal;
+            self.tween = None;
+            return false;
+        }
+        match self.tween {
+            Some((_, to, _)) if to == expanded => {}
+            _ if self.grow == goal => return false,
+            _ => self.tween = Some((self.grow, expanded, std::time::Instant::now())),
+        }
+        let Some((from, _, t0)) = self.tween else { return false };
+        let k = (t0.elapsed().as_secs_f32() * 1000.0 / ms).min(1.0);
+        // Ease out: quick to answer the pointer, soft to settle.
+        let e = 1.0 - (1.0 - k) * (1.0 - k);
+        self.grow = from + (goal - from) * e;
+        if k >= 1.0 {
+            self.tween = None;
+            return false;
+        }
+        true
+    }
 }
 
 type Scroll = Rc<dyn Fn(f64, &mut Window, &mut App)>;
@@ -224,12 +323,25 @@ pub struct Scrollbar {
     disabled: bool,
     forced: Option<(State, bool)>,
     on_scroll: Option<Scroll>,
+    width: Option<f32>,
+    rest: Option<f32>,
 }
 
 impl Scrollbar {
     /// A horizontal bar.
     pub fn new(id: impl Into<ElementId>, value: f64, max: f64, page: f64) -> Self {
-        Self { id: id.into(), value, max, page, vertical: false, disabled: false, forced: None, on_scroll: None }
+        Self {
+            id: id.into(),
+            value,
+            max,
+            page,
+            vertical: false,
+            disabled: false,
+            forced: None,
+            on_scroll: None,
+            width: None,
+            rest: None,
+        }
     }
 
     /// Vertical.
@@ -255,6 +367,20 @@ impl Scrollbar {
         self.on_scroll = Some(Rc::new(f));
         self
     }
+
+    /// Width this bar reserves, and its hovered thickness, px; defaults to
+    /// `LaceStyle::scrollbar_width`.
+    pub fn width(mut self, px: f32) -> Self {
+        self.width = Some(px.max(2.0));
+        self
+    }
+
+    /// Handle thickness of an expanding bar at rest, px; defaults to
+    /// `LaceStyle::scrollbar_rest`.
+    pub fn rest(mut self, px: f32) -> Self {
+        self.rest = Some(px.max(1.0));
+        self
+    }
 }
 
 impl RenderOnce for Scrollbar {
@@ -273,8 +399,22 @@ impl RenderOnce for Scrollbar {
         }
         let style = cx.lace().clone();
         let mode = style.scrollbar;
-        let extent = mode.extent();
+        let extent = self.width.unwrap_or(style.scrollbar_width).max(2.0);
+        let rest = self.rest.unwrap_or(style.scrollbar_rest);
         let buttons = mode == ScrollbarMode::Expanding;
+        // An expanding bar grows from its rest thickness over
+        // `scrollbar_grow_ms` instead of snapping (Qt animates it too).
+        let grow = if buttons {
+            let expanded = s.active_hover() || s.pressed;
+            let ms = style.scrollbar_grow_ms;
+            let running = ui.update(cx, |u, _| u.step(expanded, ms));
+            if running {
+                window.request_animation_frame();
+            }
+            ui.read(cx).grow
+        } else {
+            1.0
+        };
         let (value, max, page, vertical) = (self.value, self.max.max(0.0), self.page.max(0.0), self.vertical);
         let on_scroll = self.on_scroll.clone().filter(|_| !s.disabled && self.forced.is_none());
         let state = ui.clone();
@@ -296,14 +436,18 @@ impl RenderOnce for Scrollbar {
                 let travel = (length - handle_len).max(0.0);
                 let pos = if max <= 0.0 { 0.0 } else { travel * (value / max).clamp(0.0, 1.0) as f32 };
                 let colors = rules::scrollbar(&style, s, on_handle);
-                let expanded = s.active_hover() || s.pressed;
-                // At rest an expanding bar hugs its far edge, slim.
-                let thick = if buttons && !expanded { thick_full.min(EXPANDING_REST + 2.0) } else { thick_full };
+                // At rest an expanding bar hugs its far edge, slim; it
+                // grows toward the full width as `grow` runs to 1.
+                let slim = thick_full.min(rest + 2.0);
+                let thick = slim + (thick_full - slim) * grow;
+                let expanded = buttons && grow > 0.6;
                 let off = thick_full - thick;
+                // The track is as wide as the bar has grown, no wider.
                 if let Some(track) = colors.track {
-                    round_rect(window, b, 0.0, hsla(track), None);
+                    let tb = if vertical { rect(x0 + off, y0, thick, h) } else { rect(x0, y0 + off, w, thick) };
+                    round_rect(window, tb, 0.0, hsla(track), None);
                 }
-                if buttons && expanded {
+                if expanded {
                     let pal = style.pal(s);
                     for (i, dir, at_end) in [(0, if vertical { Dir::Up } else { Dir::Left }, value <= 0.0), (1, if vertical { Dir::Down } else { Dir::Right }, value >= max)] {
                         let r = if vertical {
@@ -498,4 +642,18 @@ pub fn size_grip(style: &LaceStyle, s: State) -> Div {
             glyph::paint_line(window, (x0 - k, y0 - 1.0), (x0 - 1.0, y0 - k), 1.0, c);
         }
     }))
+}
+
+#[cfg(test)]
+mod restack_tests {
+    use super::restacked;
+
+    #[test]
+    fn restacks_below_and_returns_past_the_hysteresis() {
+        assert!(!restacked(600.0, false, 500.0, 40.0));
+        assert!(restacked(499.0, false, 500.0, 40.0));
+        // Restacked: 500..540 holds it.
+        assert!(restacked(520.0, true, 500.0, 40.0));
+        assert!(!restacked(540.0, true, 500.0, 40.0));
+    }
 }

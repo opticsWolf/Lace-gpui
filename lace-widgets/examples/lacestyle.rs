@@ -18,8 +18,11 @@ use lace_widgets::style::rules;
 use lace_widgets::style::{hsla, ActiveStyle, LaceStyle, State};
 use lace_widgets::views::{Column, Delegate, ItemModel, ItemView, Mode, SelectionMode, Value};
 
+#[path = "lacestyle_parts/kit.rs"]
+mod kit;
+
 const THEMES: [&str; 6] = ["dracula", "light", "midnight", "cream", "nordic", "solarized_light"];
-const PAGES: [&str; 3] = ["Gallery", "Widgets", "Views"];
+const PAGES: [&str; 5] = ["Gallery", "Widgets", "Views", "Splitters", "Kit"];
 
 const LABEL_W: f32 = 120.0;
 const CELL_W: f32 = 76.0;
@@ -91,6 +94,12 @@ struct Gallery {
     tree_view: Entity<ItemView>,
     table_view: Entity<ItemView>,
     list_view: Entity<ItemView>,
+    /// Live overrides of the style's frame radius and scrollbar width,
+    /// kept across theme switches.
+    frame_radius: f64,
+    bar_width: f64,
+    alternating: bool,
+    kit: Entity<kit::Kit>,
 }
 
 /// A checkable project tree: folders over files, 3 levels.
@@ -125,6 +134,7 @@ fn tree_view(cx: &mut Context<Gallery>) -> Entity<ItemView> {
             .column(2, Column::stretch().delegate(Delegate::choice(["folder", "file", "symbol"])))
             .selection_mode(SelectionMode::Extended)
             .sorting(true)
+            .alternating(true)
             .with_selected(&[1, 2], cx)
     })
 }
@@ -159,7 +169,7 @@ fn table_view(cx: &mut Context<Gallery>) -> Entity<ItemView> {
 fn list_view(cx: &mut Context<Gallery>) -> Entity<ItemView> {
     let items = ["Inbox", "Drafts", "Sent", "Archive", "Spam", "Trash", "Projects", "Receipts", "Travel", "Family"];
     let model = cx.new(|_| ItemModel::list(items));
-    cx.new(|cx| ItemView::new(&model, Mode::List, cx).with_selected(&[2], cx))
+    cx.new(|cx| ItemView::new(&model, Mode::List, cx).alternating(true).with_selected(&[2], cx))
 }
 
 fn input(window: &mut Window, cx: &mut App, text: &str) -> Entity<InputState> {
@@ -201,6 +211,10 @@ impl Gallery {
             tree_view: tree_view(cx),
             table_view: table_view(cx),
             list_view: list_view(cx),
+            frame_radius: cx.lace().frame_radius as f64,
+            bar_width: cx.lace().scrollbar_width as f64,
+            alternating: true,
+            kit: cx.new(|cx| kit::Kit::new(window, cx)),
         }
     }
 
@@ -209,6 +223,50 @@ impl Gallery {
         let name = THEMES[self.theme];
         lace_gpui::skin::apply(name, cx);
         lace_widgets::install_preset(name, cx);
+        self.apply_tokens(cx);
+    }
+
+    /// Alternating row colours on every item view of the page.
+    fn set_alternating(&mut self, on: bool, cx: &mut App) {
+        self.alternating = on;
+        for v in [&self.tree_view, &self.table_view, &self.list_view] {
+            v.update(cx, |v, cx| v.set_alternating(on, cx));
+        }
+    }
+
+    /// Reinstall the style with the header's radius and bar width.
+    fn apply_tokens(&self, cx: &mut App) {
+        let mut style = cx.lace().clone();
+        style.frame_radius = self.frame_radius as f32;
+        style.scrollbar_width = self.bar_width as f32;
+        style.scrollbar_rest = (self.bar_width as f32 / 3.0).round().max(2.0);
+        lace_widgets::style::install(style, cx);
+    }
+}
+
+/// A value callback that updates the gallery with access to the app.
+fn act_v<T: 'static>(
+    w: &WeakEntity<Gallery>,
+    f: impl Fn(&mut Gallery, T, &mut App) + 'static,
+) -> impl Fn(T, &mut Window, &mut App) + 'static {
+    let w = w.clone();
+    move |v, _, cx| {
+        let _ = w.update(cx, |g, cx| {
+            f(g, v, cx);
+            cx.notify();
+        });
+    }
+}
+
+/// A spin-box callback that sets a style token and reinstalls the style.
+fn token(w: &WeakEntity<Gallery>, f: impl Fn(&mut Gallery, f64) + 'static) -> impl Fn(f64, &mut Window, &mut App) + 'static {
+    let w = w.clone();
+    move |v, _, cx| {
+        let _ = w.update(cx, |g, cx| {
+            f(g, v);
+            g.apply_tokens(cx);
+            cx.notify();
+        });
     }
 }
 
@@ -749,7 +807,8 @@ impl Gallery {
             .bg(hsla(pal.base))
             .border_1()
             .border_color(hsla(rules::frame_line(style, State::NORMAL)))
-            .rounded(px(style.corner_radius))
+            .rounded(px(style.frame_radius))
+            .p(px(style.frame_inset(style.frame_radius)))
             .overflow_hidden()
             .child(
                 div()
@@ -794,8 +853,9 @@ impl Gallery {
             .bg(hsla(pal.base))
             .border_1()
             .border_color(hsla(rules::frame_line(style, State::NORMAL)))
-            .rounded(px(style.corner_radius))
-            .py(px(2.))
+            .rounded(px(style.frame_radius))
+            .p(px(style.frame_inset(style.frame_radius)))
+            .py(px(2.0f32.max(style.frame_inset(style.frame_radius))))
             .children(rows)
     }
 
@@ -803,12 +863,12 @@ impl Gallery {
         let pal = style.pal(State::NORMAL).clone();
         div()
             .size_full()
-            .p(px(4.))
+            .p(px(4.0f32.max(style.frame_inset(style.frame_radius))))
             .bg(hsla(pal.base))
             .text_color(hsla(pal.text))
             .border_1()
             .border_color(hsla(rules::frame_line(style, State::NORMAL)))
-            .rounded(px(style.corner_radius))
+            .rounded(px(style.frame_radius))
             .child(Textarea::new(state).xsmall().appearance(false).h_full())
     }
 
@@ -824,11 +884,20 @@ impl Gallery {
         let splitter = Splitter::new("split")
             .pane(div().size_full().child(self.text_pane(style, &self.plain)), 1.0)
             .pane(div().size_full().child(self.text_pane(style, &self.rich)), 1.0);
+        let alternating = self.alternating;
         div()
             .flex()
             .flex_col()
             .gap(px(10.))
             .p(px(12.))
+            .child(
+                div().flex().gap(px(16.)).child(
+                    CheckBox::new("alternating")
+                        .label("Alternating row colours (tree, table, list)")
+                        .checked(alternating)
+                        .on_change(act_v(w, |g, v: CheckState, cx| g.set_alternating(v == CheckState::Checked, cx))),
+                ),
+            )
             .child(
                 div()
                     .flex()
@@ -845,6 +914,127 @@ impl Gallery {
                     .child(div().w(px(200.)).child(GroupBox::new("List view").child(self.list_view.clone())))
                     .child(div().flex_1().child(GroupBox::new("Splitter + text edits").child(splitter)))
                     .child(div().flex_1().child(GroupBox::new("Dial").child(dials))),
+            )
+            .child(
+                div().h(px(110.)).child(
+                    GroupBox::new("Collapsible buttons: drag the splitter (row folds one by one, last first)").child(
+                        Splitter::new("collapse-split")
+                            .pane(div().size_full().flex().flex_col().justify_center().gap(px(8.)).child(self.button_row(style)).child(
+                                div().flex().gap(px(6.)).child(
+                                    PushButton::new("alone", "Collapses alone")
+                                        .icon(|c| glyph::chevron(Dir::Right, c, 0.0).into_any_element())
+                                        .collapsible(),
+                                ),
+                            ), 1.0)
+                            .pane(div().size_full().flex().items_center().justify_center().child("drag the handle left"), 1.0),
+                    ),
+                ),
+            )
+            .into_any_element()
+    }
+
+    /// A Weave-style button row: when the row cannot fit every label, all
+    /// of its buttons drop to their icons together (tooltips keep the text).
+    fn button_row(&self, _style: &LaceStyle) -> impl IntoElement {
+        ButtonRow::new("actions")
+            .button(PushButton::new("apply", "Apply changes").icon(|c| glyph::check_mark(c).into_any_element()))
+            .button(PushButton::new("remove", "Remove").icon(|c| glyph::dash(c).into_any_element()))
+            .button(PushButton::new("expand", "Expand all").icon(|c| glyph::chevron(Dir::Down, c, 0.0).into_any_element()))
+            .button(PushButton::new("close", "Close").icon(|c| glyph::cross(c, 8.0).into_any_element()))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Splitters page
+// ---------------------------------------------------------------------------
+
+/// A labelled pane for the splitter demos.
+fn demo_pane(style: &LaceStyle, title: &'static str, note: &'static str) -> impl IntoElement {
+    let pal = style.pal(State::NORMAL).clone();
+    div()
+        .size_full()
+        .p(px(4.))
+        .child(
+            div()
+                .size_full()
+                .flex()
+                .flex_col()
+                .items_center()
+                .justify_center()
+                .gap(px(4.))
+                .bg(hsla(pal.base))
+                .border_1()
+                .border_color(hsla(rules::frame_line(style, State::NORMAL)))
+                .rounded(px(style.frame_radius))
+                .child(title)
+                .child(div().text_size(px(style.small_font_size)).text_color(hsla(pal.placeholder)).child(note)),
+        )
+}
+
+/// The room left beside a demo: drag the outer handle into it.
+fn room(style: &LaceStyle, text: &'static str) -> impl IntoElement {
+    let pal = style.pal(State::NORMAL).clone();
+    div()
+        .size_full()
+        .flex()
+        .items_center()
+        .justify_center()
+        .text_color(hsla(pal.placeholder))
+        .child(text)
+}
+
+impl Gallery {
+    fn splitters(&self, style: &LaceStyle) -> AnyElement {
+        // 1. Side by side, stacking when narrower than 560 px.
+        let three = Splitter::new("rs-three")
+            .restack(560.)
+            .pane(demo_pane(style, "Properties", "side by side >= 560 px"), 1.0)
+            .pane(demo_pane(style, "Preview", "stacked below 560 px"), 1.0)
+            .pane(demo_pane(style, "Log", "back at 600 px (40 px hysteresis)"), 1.0);
+        let first = Splitter::new("rs-outer1")
+            .pane(three, 3.0)
+            .pane(room(style, "<- drag this handle left"), 1.0);
+
+        // 2. Stacked, turning side by side when shorter than 240 px.
+        let stacked = Splitter::new("rs-stack")
+            .vertical()
+            .restack(240.)
+            .pane(demo_pane(style, "Top", "stacked >= 240 px tall"), 1.0)
+            .pane(demo_pane(style, "Bottom", "side by side below 240 px"), 1.0);
+        let second = Splitter::new("rs-outer2")
+            .vertical()
+            .pane(stacked, 3.0)
+            .pane(room(style, "drag this handle up"), 1.0);
+
+        // 3. A nested layout: a sidebar beside an editor over a console;
+        // the whole turns stacked when narrow, the inner one when short.
+        let editor = Splitter::new("rs-editor")
+            .vertical()
+            .restack(220.)
+            .pane(demo_pane(style, "Editor", "inner: stacked >= 220 px tall"), 2.0)
+            .pane(demo_pane(style, "Console", ""), 1.0);
+        let nested = Splitter::new("rs-nested")
+            .restack(420.)
+            .pane(demo_pane(style, "Sidebar", "outer: side by side >= 420 px"), 1.0)
+            .pane(editor, 2.5);
+        let third = Splitter::new("rs-outer3")
+            .pane(Splitter::new("rs-outer3v").vertical().pane(nested, 3.0).pane(room(style, "drag this handle up"), 1.0), 3.0)
+            .pane(room(style, "<- and this one left"), 1.0);
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(10.))
+            .p(px(12.))
+            .child("Restacking splitters (Weave's WeaveSplitter(restack=px)): a splitter shorter than its threshold along its own axis turns its panes the other way, and turns back only with 40 px to spare. Each way keeps its own pane sizes.")
+            .child(div().h(px(260.)).child(GroupBox::new("Side by side -> stacked").child(first)))
+            .child(
+                div()
+                    .flex()
+                    .gap(px(10.))
+                    .h(px(460.))
+                    .child(div().w(px(360.)).flex_none().child(GroupBox::new("Stacked -> side by side").child(second)))
+                    .child(div().flex_1().min_w_0().child(GroupBox::new("Nested layout").child(third))),
             )
             .into_any_element()
     }
@@ -878,13 +1068,20 @@ impl Render for Gallery {
             .child(div().w(px(24.)))
             .child(TabBar::new("pages", PAGES).current(self.page).on_select(set(&w, |g, i| g.page = i)))
             .child(div().flex_1())
+            .child("Frame radius")
+            .child(div().w(px(64.)).child(SpinBox::new("tok-radius", self.frame_radius).range(0., 16.).on_change(token(&w, |g, v| g.frame_radius = v))))
+            .child("Scrollbar")
+            .child(div().w(px(64.)).child(SpinBox::new("tok-bar", self.bar_width).range(4., 24.).on_change(token(&w, |g, v| g.bar_width = v))))
+            .child(div().w(px(12.)))
             .child(MenuBarItem::new("mb-file", "File"))
             .child(MenuBarItem::new("mb-edit", "Edit"))
             .child(MenuBarItem::new("mb-view", "View"));
         let page = match self.page {
             0 => self.gallery(&style),
             1 => self.widgets(&style, &w),
-            _ => self.views(&style, &w),
+            2 => self.views(&style, &w),
+            3 => self.splitters(&style),
+            _ => self.kit.clone().into_any_element(),
         };
         div()
             .size_full()
@@ -913,7 +1110,7 @@ fn main() {
         gpui_kit::init(cx);
         lace_gpui::skin::apply(THEMES[theme], cx);
         lace_widgets::install_preset(THEMES[theme], cx);
-        let (w, h) = if page == 0 { (1820.0, 760.0) } else { (1100.0, 900.0) };
+        let (w, h) = if page == 0 { (1820.0, 760.0) } else { (1100.0, 1000.0) };
         let display = cx
             .primary_display()
             .map(|d| d.visible_bounds())
