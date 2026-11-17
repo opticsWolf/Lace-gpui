@@ -1,10 +1,12 @@
-//! The 16 curated themes.
+//! The 25 curated themes.
 //!
 //! Palettes ported one for one from Lace's `lace/dock_custom_theme.py`
 //! (Apache-2.0, (c) opticsWolf): the eight Basics in the classic 4px chassis
 //! (dark to light: midnight, dark, mocha, slate, caramel, neutral, cream,
-//! light), the seven Editor Classics on Lace's stock chassis, and
-//! cyberpunk_neon with its 10px/8px neon geometry.
+//! light) and again on the 10px "Neo" chassis, the seven Editor Classics on
+//! Lace's stock chassis, and the two Neons (cyberpunk_neon, neon_dusk) with
+//! their 10px/8px geometry. Neo and Neon also round their controls and
+//! frames further (6px / 8px), which Lace's presets do not.
 
 use crate::color::rgba;
 use crate::engine::{Contrast, Depth, HoverMode, Rel, Scrollbar, Selection, ThemeSpec, TitleMode};
@@ -298,11 +300,198 @@ pub const CYBERPUNK_NEON: ThemeSpec = ThemeSpec {
     tab_radius: 8.0,
     border_width: 1.5,
     title_height: 32.0,
+    control_radius: NEO_CONTROL_RADIUS,
+    frame_radius: Some(NEO_FRAME_RADIUS),
     ..EDITOR_CLASSIC
 };
 
-/// Every curated theme, in Lace's dark-to-light order.
-pub const ALL: [&ThemeSpec; 16] = [
+/// cyberpunk_neon's neon on dracula's softer indigo: no card outline, a
+/// darker tab strip so the outlines read, the same 10px/8px geometry.
+pub const NEON_DUSK: ThemeSpec = ThemeSpec {
+    name: "neon_dusk",
+    base: rgba(34, 36, 48, 255),
+    accent: rgba(255, 92, 170, 255),
+    text: rgba(240, 240, 248, 255),
+    surface: Some(rgba(50, 53, 70, 255)),
+    title_bg: Some(rgba(24, 26, 36, 255)),
+    border: Some(rgba(98, 114, 164, 200)),
+    focus_border: Some(rgba(139, 233, 253, 255)),
+    sidebar_tab_border: Some(rgba(0, 0, 0, 0)),
+    sidebar_tab_border_hover: Some(rgba(98, 114, 164, 160)),
+    success: Some(rgba(80, 250, 123, 255)),
+    warning: Some(rgba(241, 250, 140, 255)),
+    error: Some(rgba(255, 85, 85, 255)),
+    info: Some(rgba(139, 233, 253, 255)),
+    corner_radius: 8.0,
+    tab_radius: 8.0,
+    border_width: 0.0,
+    title_height: 32.0,
+    control_radius: NEO_CONTROL_RADIUS,
+    frame_radius: Some(NEO_FRAME_RADIUS),
+    ..EDITOR_CLASSIC
+};
+
+// ===========================================================================
+// BASICS NEO (the 10px card chassis)
+// ===========================================================================
+
+/// Control radius of the large-card chassis (Neo, Neon), px. Lace keeps
+/// every preset's controls at 4px; the gpui port rounds them with the cards.
+pub const NEO_CONTROL_RADIUS: f64 = 6.0;
+/// Frame radius of the large-card chassis, px.
+pub const NEO_FRAME_RADIUS: f64 = 8.0;
+
+/// Lace's `_BASIC_NEO`: the Basics' colours on 10px cards and 8px tabs, a
+/// full-strength unfocused frame, lighter hovers, the stock outline weight.
+pub const BASIC_NEO: ThemeSpec = ThemeSpec {
+    name: "",
+    title_mode: TitleMode::Darker,
+    hover_mode: HoverMode::Lighter,
+    keep_tint: true,
+    control_radius: NEO_CONTROL_RADIUS,
+    frame_radius: Some(NEO_FRAME_RADIUS),
+    corner_radius: 10.0,
+    tab_radius: 8.0,
+    border_width: 1.5,
+    title_height: 32.0,
+    ..ThemeSpec::DEFAULT
+};
+
+/// Midnight on the Neo chassis.
+pub const MIDNIGHT_NEO: ThemeSpec = ThemeSpec {
+    name: "midnight_neo",
+    base: rgba(11, 13, 20, 255),
+    surface: Some(rgba(17, 21, 31, 255)),
+    border: Some(rgba(25, 30, 42, 255)),
+    accent: rgba(55, 95, 226, 255),
+    text: rgba(206, 211, 224, 255),
+    focus_border: Some(rgba(55, 95, 226, 255)),
+    sidebar_tab_border: Some(rgba(25, 30, 42, 255)),
+    sidebar_tab_border_active: Some(rgba(55, 95, 226, 255)),
+    sidebar_tab_border_hover: Some(rgba(55, 95, 226, 160)),
+    keep_tint: false,
+    ..BASIC_NEO
+};
+
+/// Dark on the Neo chassis.
+pub const DARK_NEO: ThemeSpec = ThemeSpec {
+    name: "dark_neo",
+    base: rgba(18, 19, 20, 255),
+    surface: Some(rgba(25, 26, 27, 255)),
+    border: Some(rgba(37, 38, 39, 255)),
+    accent: rgba(0, 120, 212, 255),
+    text: rgba(202, 204, 207, 255),
+    focus_border: Some(rgba(0, 120, 212, 255)),
+    sidebar_tab_border: Some(rgba(37, 38, 39, 255)),
+    sidebar_tab_border_active: Some(rgba(0, 120, 212, 255)),
+    sidebar_tab_border_hover: Some(rgba(0, 120, 212, 160)),
+    title_mode: TitleMode::Lighter,
+    ..BASIC_NEO
+};
+
+/// Mocha on the Neo chassis.
+pub const MOCHA_NEO: ThemeSpec = ThemeSpec {
+    name: "mocha_neo",
+    base: rgba(36, 30, 27, 255),
+    surface: Some(rgba(46, 39, 35, 255)),
+    border: Some(rgba(60, 51, 46, 255)),
+    accent: rgba(200, 110, 60, 255),
+    text: rgba(235, 225, 210, 255),
+    focus_border: Some(rgba(200, 110, 60, 255)),
+    sidebar_tab_border: Some(rgba(60, 51, 46, 255)),
+    sidebar_tab_border_active: Some(rgba(200, 110, 60, 255)),
+    sidebar_tab_border_hover: Some(rgba(200, 110, 60, 160)),
+    title_mode: TitleMode::Lighter,
+    ..BASIC_NEO
+};
+
+/// Slate on the Neo chassis.
+pub const SLATE_NEO: ThemeSpec = ThemeSpec {
+    name: "slate_neo",
+    base: rgba(150, 156, 166, 255),
+    surface: Some(rgba(168, 174, 184, 255)),
+    border: Some(rgba(132, 138, 148, 255)),
+    accent: rgba(22, 70, 150, 255),
+    text: rgba(22, 26, 34, 255),
+    focus_border: Some(rgba(22, 70, 150, 255)),
+    sidebar_tab_border: Some(rgba(132, 138, 148, 255)),
+    sidebar_tab_border_active: Some(rgba(22, 70, 150, 255)),
+    sidebar_tab_border_hover: Some(rgba(22, 70, 150, 160)),
+    is_light: Rel::Light,
+    title_mode: TitleMode::Lighter,
+    ..BASIC_NEO
+};
+
+/// Caramel on the Neo chassis.
+pub const CARAMEL_NEO: ThemeSpec = ThemeSpec {
+    name: "caramel_neo",
+    base: rgba(197, 194, 189, 255),
+    surface: Some(rgba(217, 214, 207, 255)),
+    border: Some(rgba(167, 162, 151, 255)),
+    accent: rgba(186, 98, 0, 255),
+    text: rgba(39, 34, 28, 255),
+    focus_border: Some(rgba(186, 98, 0, 255)),
+    sidebar_tab_border: Some(rgba(167, 162, 151, 255)),
+    sidebar_tab_border_active: Some(rgba(186, 98, 0, 255)),
+    sidebar_tab_border_hover: Some(rgba(186, 98, 0, 160)),
+    title_bg: Some(rgba(207, 204, 197, 255)),
+    is_light: Rel::Light,
+    ..BASIC_NEO
+};
+
+/// Neutral on the Neo chassis.
+pub const NEUTRAL_NEO: ThemeSpec = ThemeSpec {
+    name: "neutral_neo",
+    base: rgba(190, 191, 194, 255),
+    surface: Some(rgba(210, 211, 214, 255)),
+    border: Some(rgba(170, 171, 175, 255)),
+    accent: rgba(6, 108, 196, 255),
+    text: rgba(30, 33, 40, 255),
+    focus_border: Some(rgba(6, 108, 196, 255)),
+    sidebar_tab_border: Some(rgba(170, 171, 175, 255)),
+    sidebar_tab_border_active: Some(rgba(6, 108, 196, 255)),
+    sidebar_tab_border_hover: Some(rgba(6, 108, 196, 160)),
+    title_bg: Some(rgba(199, 200, 203, 255)),
+    is_light: Rel::Light,
+    ..BASIC_NEO
+};
+
+/// Cream on the Neo chassis.
+pub const CREAM_NEO: ThemeSpec = ThemeSpec {
+    name: "cream_neo",
+    base: rgba(240, 235, 225, 255),
+    surface: Some(rgba(252, 249, 243, 255)),
+    border: Some(rgba(226, 219, 207, 255)),
+    accent: rgba(176, 92, 0, 255),
+    text: rgba(48, 40, 32, 255),
+    focus_border: Some(rgba(176, 92, 0, 255)),
+    sidebar_tab_border: Some(rgba(226, 219, 207, 255)),
+    sidebar_tab_border_active: Some(rgba(176, 92, 0, 255)),
+    sidebar_tab_border_hover: Some(rgba(176, 92, 0, 160)),
+    is_light: Rel::Light,
+    ..BASIC_NEO
+};
+
+/// Light on the Neo chassis.
+pub const LIGHT_NEO: ThemeSpec = ThemeSpec {
+    name: "light_neo",
+    base: rgba(238, 238, 241, 255),
+    surface: Some(rgba(249, 249, 252, 255)),
+    border: Some(rgba(225, 225, 228, 255)),
+    accent: rgba(0, 102, 192, 255),
+    text: rgba(45, 47, 52, 255),
+    focus_border: Some(rgba(0, 102, 192, 255)),
+    sidebar_tab_border: Some(rgba(225, 225, 228, 255)),
+    sidebar_tab_border_active: Some(rgba(0, 102, 192, 255)),
+    sidebar_tab_border_hover: Some(rgba(0, 102, 192, 160)),
+    title_bg: Some(rgba(243, 243, 246, 255)),
+    is_light: Rel::Light,
+    ..BASIC_NEO
+};
+
+/// Every curated theme, in Lace's menu order: Basics, Basics Neo, Editor
+/// Classics, Neon.
+pub const ALL: [&ThemeSpec; 25] = [
     &MIDNIGHT,
     &DARK,
     &MOCHA,
@@ -311,6 +500,14 @@ pub const ALL: [&ThemeSpec; 16] = [
     &NEUTRAL,
     &CREAM,
     &LIGHT,
+    &MIDNIGHT_NEO,
+    &DARK_NEO,
+    &MOCHA_NEO,
+    &SLATE_NEO,
+    &CARAMEL_NEO,
+    &NEUTRAL_NEO,
+    &CREAM_NEO,
+    &LIGHT_NEO,
     &DRACULA,
     &MONOKAI,
     &NORDIC,
@@ -319,6 +516,21 @@ pub const ALL: [&ThemeSpec; 16] = [
     &SOLARIZED_DARK,
     &SOLARIZED_LIGHT,
     &CYBERPUNK_NEON,
+    &NEON_DUSK,
+];
+
+/// [`ALL`] in Lace's named groups (`THEME_GROUPS`), for menus.
+pub const GROUPS: [(&str, &[&ThemeSpec]); 4] = [
+    ("Basics", &[&MIDNIGHT, &DARK, &MOCHA, &SLATE, &CARAMEL, &NEUTRAL, &CREAM, &LIGHT]),
+    (
+        "Basics Neo",
+        &[&MIDNIGHT_NEO, &DARK_NEO, &MOCHA_NEO, &SLATE_NEO, &CARAMEL_NEO, &NEUTRAL_NEO, &CREAM_NEO, &LIGHT_NEO],
+    ),
+    (
+        "Editor Classics",
+        &[&DRACULA, &MONOKAI, &NORDIC, &CATPPUCCIN, &TOKYO_NIGHT, &SOLARIZED_DARK, &SOLARIZED_LIGHT],
+    ),
+    ("Neon", &[&CYBERPUNK_NEON, &NEON_DUSK]),
 ];
 
 /// Look a theme up by name, normalizing case, `-` and spaces to `_`.

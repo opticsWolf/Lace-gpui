@@ -384,16 +384,16 @@ pub fn apply_next_styled(current: &str, style: WidgetStyle, cx: &mut App) -> &'s
 
 /// The chassis a theme rides, as gpui-kit's panel chrome: the Basics' 4px
 /// classic chassis keeps the plain title, the 10px card chassis (neo and
-/// cyberpunk_neon) always shows the tab bar.
+/// the neons, with their 8px tabs) always shows the tab bar.
 pub fn dock_chrome(spec: &ThemeSpec) -> PanelStyle {
-    if spec.corner_radius >= 10.0 {
+    if spec.corner_radius >= 10.0 || spec.tab_radius >= 8.0 {
         PanelStyle::TabBar
     } else {
         PanelStyle::Auto
     }
 }
 
-/// Experimental: the 16 presets as Lace-flavoured JSON, for Lace's Theme
+/// Experimental: the curated presets as Lace-flavoured JSON, for Lace's Theme
 /// Studio or a `ThemeRegistry::load_themes_from_str` round trip. Built by
 /// hand — the core has no serde dependency.
 pub fn theme_set_json() -> String {

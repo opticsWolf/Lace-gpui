@@ -7,7 +7,7 @@
 
 use std::rc::Rc;
 
-use gpui_kit::component::input::{Input, InputState};
+use gpui_kit::component::input::{Input, InputState, Textarea, TextareaState};
 use gpui_kit::component::Sizable;
 use gpui_kit::gpui::{
     anchored, canvas, deferred, div, prelude::FluentBuilder, px, AnyElement, App, BoxShadow, Focusable,
@@ -127,6 +127,63 @@ impl LineEdit {
                 ),
             )
             .when(self.fill.is_some(), |d| d.size_full());
+        ix.bind(el, true)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Text edit
+// ---------------------------------------------------------------------------
+
+/// A `QPlainTextEdit`: gpui-kit's multi-line editor inside a LaceStyle
+/// field, framed with the frame radius. It fills its parent's height.
+#[derive(IntoElement)]
+pub struct TextEdit {
+    id: ElementId,
+    state: Entity<TextareaState>,
+    disabled: bool,
+    forced: Option<State>,
+}
+
+impl TextEdit {
+    /// A text edit over `state` (create it with `TextareaState::new`).
+    pub fn new(id: impl Into<ElementId>, state: &Entity<TextareaState>) -> Self {
+        Self { id: id.into(), state: state.clone(), disabled: false, forced: None }
+    }
+
+    /// Disable.
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    /// Paint in `state` regardless of focus.
+    pub fn state(mut self, state: State) -> Self {
+        self.forced = Some(state);
+        self
+    }
+}
+
+impl RenderOnce for TextEdit {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let focus = self.state.read(cx).focus_handle(cx);
+        let ix = Interaction::new(self.id.clone(), window, cx).with_focus(focus).force(self.forced);
+        let mut s = ix.state(window, cx).with_disabled(self.disabled);
+        s.focused = s.focused || ix.is_focused(window);
+        let style = cx.lace().clone();
+        let inset = style.frame_inset(style.frame_radius).max(2.0);
+        let el = field_div(&style, s)
+            .id(self.id.clone())
+            .h_full()
+            .items_start()
+            .rounded(px(style.frame_radius))
+            .p(px(inset))
+            .child(
+                div()
+                    .size_full()
+                    .min_w_0()
+                    .child(Textarea::new(&self.state).xsmall().appearance(false).disabled(self.disabled).h_full()),
+            );
         ix.bind(el, true)
     }
 }

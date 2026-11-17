@@ -26,6 +26,8 @@ pub enum ButtonKind {
     Default,
     /// Flat / auto-raise: a face only while hovered or pressed.
     Flat,
+    /// Filled with a status colour, like the default button with the accent.
+    Toned(super::tones::Tone),
 }
 
 /// A face: optional fill, optional outline, the label colour on it, and
@@ -52,6 +54,9 @@ pub fn button_face(style: &LaceStyle, s: State, kind: ButtonKind) -> Face {
     let (fill, line, text) = if is_default {
         let fill = p::state_fill(s, acc);
         (Some(fill), Some(fill), p::on(style, s, fill))
+    } else if let ButtonKind::Toned(tone) = kind {
+        let chip = super::tones::solid(style, s, tone);
+        (chip.fill, Some(chip.line), chip.text)
     } else if s.checked {
         let fill = p::state_fill(s, p::mix(base, acc, CHECKED_WASH));
         let line = p::legible(style, s, acc, style.ui_ratio(), None);

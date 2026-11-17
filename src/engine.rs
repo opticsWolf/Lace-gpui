@@ -193,6 +193,10 @@ pub struct ThemeSpec {
     /// `Some(px)` overrides it — PySide Lace's independent
     /// `button_corner_radius` knob, which its presets left at the fixed 3px.
     pub button_radius: Option<f64>,
+    /// Corner radius of frames: group boxes, item views, text edits.
+    /// `None` (the default) follows `control_radius`, as in Lace; a theme
+    /// with large cards may round its frames further.
+    pub frame_radius: Option<f64>,
     /// Dock-area card corner radius.
     pub corner_radius: f64,
     /// Tab corner radius.
@@ -238,6 +242,7 @@ impl ThemeSpec {
     keep_tint: false,
     control_radius: 4.0,
     button_radius: None,
+    frame_radius: None,
     corner_radius: 2.0,
     tab_radius: 0.0,
     border_width: 0.0,

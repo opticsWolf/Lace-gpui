@@ -21,7 +21,8 @@ use lace_widgets::views::{Column, Delegate, ItemModel, ItemView, Mode, Selection
 #[path = "lacestyle_parts/kit.rs"]
 mod kit;
 
-const THEMES: [&str; 6] = ["dracula", "light", "midnight", "cream", "nordic", "solarized_light"];
+/// Every Lace preset: Basics, Basics Neo, Editor Classics, Neon.
+const THEMES: [&lace_gpui::engine::ThemeSpec; 25] = lace_gpui::themes::ALL;
 const PAGES: [&str; 5] = ["Gallery", "Widgets", "Views", "Splitters", "Kit"];
 
 const LABEL_W: f32 = 120.0;
@@ -220,9 +221,11 @@ impl Gallery {
 
     fn set_theme(&mut self, ix: usize, cx: &mut App) {
         self.theme = ix % THEMES.len();
-        let name = THEMES[self.theme];
+        let name = THEMES[self.theme].name;
         lace_gpui::skin::apply(name, cx);
         lace_widgets::install_preset(name, cx);
+        // Each theme brings its own radii; the header fields follow them.
+        self.frame_radius = cx.lace().frame_radius as f64;
         self.apply_tokens(cx);
     }
 
@@ -1063,7 +1066,13 @@ impl Render for Gallery {
                     .auto_raise()
                     .on_click(act(&w, move |g, cx| g.set_theme(theme + THEMES.len() - 1, cx))),
             )
-            .child(div().w(px(110.)).flex().justify_center().child(THEMES[theme]))
+            .child(
+                div().w(px(150.)).child(
+                    ComboBox::new("theme-pick", THEMES.iter().map(|t| t.name))
+                        .selected(Some(theme))
+                        .on_select(act_v(&w, |g, i, cx| g.set_theme(i, cx))),
+                ),
+            )
             .child(ToolButton::new("next-theme", ">").auto_raise().on_click(act(&w, move |g, cx| g.set_theme(theme + 1, cx))))
             .child(div().w(px(24.)))
             .child(TabBar::new("pages", PAGES).current(self.page).on_select(set(&w, |g, i| g.page = i)))
@@ -1100,7 +1109,8 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let theme = args
         .first()
-        .and_then(|t| THEMES.iter().position(|n| n == t))
+        .and_then(|t| THEMES.iter().position(|s| s.name == t))
+        .or_else(|| THEMES.iter().position(|s| s.name == "dracula"))
         .unwrap_or(0);
     let page = args
         .get(1)
@@ -1108,8 +1118,8 @@ fn main() {
         .unwrap_or(0);
     gpui_kit::application().with_assets(gpui_kit::assets::Assets).run(move |cx: &mut App| {
         gpui_kit::init(cx);
-        lace_gpui::skin::apply(THEMES[theme], cx);
-        lace_widgets::install_preset(THEMES[theme], cx);
+        lace_gpui::skin::apply(THEMES[theme].name, cx);
+        lace_widgets::install_preset(THEMES[theme].name, cx);
         let (w, h) = if page == 0 { (1820.0, 760.0) } else { (1100.0, 1000.0) };
         let display = cx
             .primary_display()

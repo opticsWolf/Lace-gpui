@@ -19,6 +19,7 @@
 
 pub mod paint;
 pub mod rules;
+pub mod tones;
 
 use gpui_kit::gpui::{App, Global, Hsla};
 use lace_gpui::color::{self, Rgba};
@@ -113,6 +114,19 @@ impl Palette {
     }
 }
 
+/// The theme's status colours (Lace's `success_color` .. `info_color`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StatusColors {
+    /// Success / done.
+    pub success: Rgba,
+    /// Warning.
+    pub warning: Rgba,
+    /// Error / danger.
+    pub error: Rgba,
+    /// Information.
+    pub info: Rgba,
+}
+
 /// How scrollbars rest and grow (`LaceStyle(scrollbar=...)`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ScrollbarMode {
@@ -144,12 +158,15 @@ pub struct LaceStyle {
     pub active: Palette,
     /// The disabled colour group.
     pub disabled: Palette,
+    /// Status colours: tags, alerts, badges, toned buttons.
+    pub status: StatusColors,
     /// Corner radius of controls, px.
     pub control_radius: f32,
     /// Corner radius of dock cards; popups blend toward it.
     pub corner_radius: f32,
     /// Corner radius of frames: group boxes, item views, text edits
-    /// (Lace's `RoundedArea`). Starts at `control_radius`, as in Lace.
+    /// (Lace's `RoundedArea`). The theme's `frame_radius`, else its
+    /// `control_radius`, as in Lace.
     pub frame_radius: f32,
     /// Keyboard focus ring width, px.
     pub focus_width: f32,
@@ -209,9 +226,10 @@ impl LaceStyle {
             is_light: t.is_light,
             active,
             disabled,
+            status: StatusColors { success: t.success, warning: t.warning, error: t.error, info: t.info },
             control_radius: spec.button_radius.unwrap_or(spec.control_radius).max(0.0) as f32,
             corner_radius: spec.corner_radius.max(0.0) as f32,
-            frame_radius: spec.control_radius.max(0.0) as f32,
+            frame_radius: spec.frame_radius.unwrap_or(spec.control_radius).max(0.0) as f32,
             scrollbar_width: scrollbar.extent(),
             scrollbar_rest: rules::EXPANDING_REST,
             scrollbar_grow_ms: 120.0,

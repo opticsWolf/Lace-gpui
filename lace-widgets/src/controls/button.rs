@@ -168,6 +168,13 @@ impl PushButton {
         self
     }
 
+    /// Filled with a status colour (success, warning, danger, info): the
+    /// default button's face in another colour.
+    pub fn tone(mut self, tone: crate::style::tones::Tone) -> Self {
+        self.kind = ButtonKind::Toned(tone);
+        self
+    }
+
     /// Show as checked (a toggle button that is on).
     pub fn checked(mut self, checked: bool) -> Self {
         self.checked = checked;

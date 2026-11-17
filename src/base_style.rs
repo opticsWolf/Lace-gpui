@@ -727,9 +727,12 @@ mod tests {
     #[test]
     fn popup_radius_bridges_control_and_card() {
         let b = BaseStyle::from_tokens(&crate::build(spec("cyberpunk_neon")));
-        assert_eq!(b.control_radius, 4.0);
+        // The neon chassis rounds its controls with its cards: 6 px.
+        assert_eq!(b.control_radius, 6.0);
         assert_eq!(b.corner_radius, 10.0);
-        assert_eq!(b.popup_radius, 6.0);
+        assert_eq!(b.popup_radius, 7.0);
+        let b = BaseStyle::from_tokens(&crate::build(spec("dracula")));
+        assert_eq!(b.control_radius, 4.0);
     }
 
     #[test]

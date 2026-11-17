@@ -1,6 +1,6 @@
 //! The "Kit" page: gpui-kit's stock components (gpui-component) as they
-//! render under the Lace skin, untouched, so it is easy to see which ones
-//! still need a LaceStyle widget or more theme tokens.
+//! render under the Lace skin, and, switched to LaceStyle, the same groups
+//! built from this crate's widgets, so the two can be compared directly.
 
 use gpui_kit::component::accordion::Accordion;
 use gpui_kit::component::alert::Alert;
@@ -30,10 +30,24 @@ use gpui_kit::component::tag::Tag;
 use gpui_kit::component::tree::tree;
 use gpui_kit::component::{Disableable, IconName, IndexPath, Sizable};
 use gpui_kit::component::tree::{TreeItem, TreeState};
-use gpui_kit::gpui::{div, prelude::*, px, AnyElement, App, Context, Entity, SharedString, Window};
+use gpui_kit::gpui::{div, prelude::*, px, AnyElement, App, Context, Entity, SharedString, WeakEntity, Window};
+use lace_widgets::controls as lw;
+use lace_widgets::controls::{CheckState, Tone};
+use lace_widgets::glyph;
+use lace_widgets::style::{hsla, ActiveStyle};
+use lace_widgets::views::{ItemModel, ItemView, Mode};
 
 /// The page's own state: what the stock components bind to.
 pub struct Kit {
+    /// Show the LaceStyle widgets instead of the stock ones.
+    lace: bool,
+    l_slider: f64,
+    l_number: f64,
+    l_select: usize,
+    l_segment: usize,
+    l_tool: usize,
+    l_step: usize,
+    l_tree: Entity<ItemView>,
     text: Entity<InputState>,
     password: Entity<InputState>,
     number: Entity<InputState>,
@@ -62,7 +76,29 @@ impl Kit {
             TreeItem::new("docs", "docs").child(TreeItem::new("docs/readme.md", "readme.md")),
             TreeItem::new("Cargo.toml", "Cargo.toml"),
         ];
+        let l_model = cx.new(|_| {
+            let mut m = ItemModel::new(["Name"]);
+            let src = m.add_row(None, vec!["src".into()]);
+            for f in ["main.rs", "lib.rs"] {
+                m.add_row(Some(src), vec![f.into()]);
+            }
+            let ui = m.add_row(Some(src), vec!["ui".into()]);
+            m.add_row(Some(ui), vec!["view.rs".into()]);
+            let docs = m.add_row(None, vec!["docs".into()]);
+            m.add_row(Some(docs), vec!["readme.md".into()]);
+            m.add_row(None, vec!["Cargo.toml".into()]);
+            m.set_expanded(src, true);
+            m
+        });
         Self {
+            lace: true,
+            l_slider: 40.0,
+            l_number: 42.0,
+            l_select: 1,
+            l_segment: 1,
+            l_tool: 0,
+            l_step: 1,
+            l_tree: cx.new(|cx| ItemView::new(&l_model, Mode::Tree, cx).with_selected(&[1], cx)),
             text: cx.new(|cx| InputState::new(window, cx).placeholder("Input")),
             password: cx.new(|cx| InputState::new(window, cx).masked(true).default_value("secret")),
             number: cx.new(|cx| InputState::new(window, cx).default_value("42")),
@@ -90,8 +126,224 @@ fn row() -> gpui_kit::gpui::Div {
     div().flex().flex_wrap().items_center().gap(px(8.))
 }
 
+/// A widget callback that updates the page and repaints it.
+fn upd<T: 'static>(w: &WeakEntity<Kit>, f: impl Fn(&mut Kit, T) + 'static) -> impl Fn(T, &mut Window, &mut App) + 'static {
+    let w = w.clone();
+    move |v, _, cx| {
+        let _ = w.update(cx, |k, cx| {
+            f(k, v);
+            cx.notify();
+        });
+    }
+}
+
+/// A LaceStyle group box card.
+fn lace_card(title: &'static str, body: impl IntoElement) -> AnyElement {
+    lw::GroupBox::new(title).child(div().flex().flex_col().gap(px(10.)).child(body)).into_any_element()
+}
+
 impl Render for Kit {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let w = cx.entity().downgrade();
+        let (cards, note) = if self.lace {
+            (self.lace_cards(window, cx), "The same groups built from LaceStyle widgets: Qt's families plus switches, tags, alerts, rings and steppers in the Lace look.")
+        } else {
+            (self.stock_cards(cx), "gpui-kit / gpui-component stock components, unstyled by LaceStyle: they follow the skin's theme colours only.")
+        };
+        div()
+            .p(px(12.))
+            .flex()
+            .flex_col()
+            .gap(px(10.))
+            .child(
+                row()
+                    .child(
+                        lw::Segmented::new("kit-mode", ["Default", "LaceStyle"])
+                            .selected(Some(self.lace as usize))
+                            .on_select(upd(&w, |k, i| k.lace = i == 1)),
+                    )
+                    .child(div().text_size(px(12.)).child(note)),
+            )
+            .child(div().grid().grid_cols(2).gap(px(10.)).children(cards))
+    }
+}
+
+impl Kit {
+    /// The eight groups in LaceStyle widgets.
+    fn lace_cards(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let w = cx.entity().downgrade();
+        let style = cx.lace().clone();
+        let ink = hsla(style.active.button_text);
+        let plus = move || {
+            glyph::glyph_box(12.0, 12.0, move |b, window, _| glyph::paint_plus_minus(window, b, true, ink)).into_any_element()
+        };
+
+        let buttons = div()
+            .flex()
+            .flex_col()
+            .gap(px(8.))
+            .child(
+                row()
+                    .child(lw::PushButton::new("l-default", "Default"))
+                    .child(lw::PushButton::new("l-primary", "Primary").default_button())
+                    .child(lw::PushButton::new("l-flat", "Flat").flat())
+                    .child(lw::PushButton::new("l-danger", "Danger").tone(Tone::Danger))
+                    .child(lw::PushButton::new("l-warning", "Warning").tone(Tone::Warning))
+                    .child(lw::PushButton::new("l-success", "Success").tone(Tone::Success))
+                    .child(lw::PushButton::new("l-info", "Info").tone(Tone::Info)),
+            )
+            .child(
+                row()
+                    .child(lw::PushButton::new("l-icon", "With icon").icon(move |_| plus()))
+                    .child(lw::ToolButton::new("l-tool", "Tool").auto_raise())
+                    .child(lw::ToolButton::new("l-tool-on", "Checked").checked(true))
+                    .child(lw::PushButton::new("l-disabled", "Disabled").disabled(true)),
+            )
+            .child(
+                row().child(
+                    lw::Segmented::new("l-group", ["Left", "Middle", "Right"])
+                        .selected(Some(self.l_segment))
+                        .on_select(upd(&w, |k, i| k.l_segment = i)),
+                ),
+            );
+
+        let toggles = div()
+            .flex()
+            .flex_col()
+            .gap(px(10.))
+            .child(
+                row()
+                    .child(
+                        lw::CheckBox::new("l-check")
+                            .label("Checkbox")
+                            .checked(self.check)
+                            .on_change(upd(&w, |k, v: CheckState| k.check = v == CheckState::Checked)),
+                    )
+                    .child(lw::CheckBox::new("l-check-off").label("Disabled").disabled(true))
+                    .child(lw::Switch::new("l-switch").label("Switch").checked(self.switch).on_change(upd(&w, |k, v| k.switch = v)))
+                    .child(lw::Switch::new("l-switch-off").label("Disabled").disabled(true)),
+            )
+            .child(row().children(["One", "Two", "Three"].into_iter().enumerate().map(|(i, label)| {
+                lw::RadioButton::new(SharedString::from(format!("l-r{i}")))
+                    .label(label)
+                    .checked(self.radio == i)
+                    .on_select({
+                        let f = upd(&w, move |k, ()| k.radio = i);
+                        move |window, cx| f((), window, cx)
+                    })
+                    .into_any_element()
+            })))
+            .child(row().child(lw::Rating::new("l-rating", self.rating).on_change(upd(&w, |k, v| k.rating = v))));
+
+        let inputs = div()
+            .flex()
+            .flex_col()
+            .gap(px(8.))
+            .child(lw::LineEdit::new("l-text", &self.text))
+            .child(lw::LineEdit::new("l-password", &self.password))
+            .child(lw::SpinBox::new("l-number", self.l_number).range(0., 100.).on_change(upd(&w, |k, v| k.l_number = v)))
+            .child(
+                lw::ComboBox::new("l-select", ["Apple", "Banana", "Cherry", "Damson", "Elderberry"])
+                    .selected(Some(self.l_select))
+                    .on_select(upd(&w, |k, i| k.l_select = i)),
+            )
+            .child(div().h(px(70.)).child(lw::TextEdit::new("l-area", &self.area)));
+
+        let ranges = div()
+            .flex()
+            .flex_col()
+            .gap(px(12.))
+            .child(lw::Slider::new("l-slider", self.l_slider).on_change(upd(&w, |k, v| k.l_slider = v)))
+            .child(lw::ProgressBar::new(self.l_slider))
+            .child(lw::ProgressBar::new(0.0).busy())
+            .child(
+                row()
+                    .child(lw::ProgressRing::new(self.l_slider / 100.0))
+                    .child(lw::ProgressRing::new(0.62).size(28.0).no_label())
+                    .child(lw::Spinner::default()),
+            );
+
+        let display = div()
+            .flex()
+            .flex_col()
+            .gap(px(10.))
+            .child(
+                row()
+                    .child(lw::Tag::new("Accent"))
+                    .child(lw::Tag::new("Neutral").tone(Tone::Neutral))
+                    .child(lw::Tag::new("Success").tone(Tone::Success))
+                    .child(lw::Tag::new("Warning").tone(Tone::Warning))
+                    .child(lw::Tag::new("Danger").tone(Tone::Danger))
+                    .child(lw::Tag::new("Outline").tone(Tone::Info).outline())
+                    .child(lw::Tag::new("Pill").pill()),
+            )
+            .child(
+                row()
+                    .gap(px(14.))
+                    .child(lw::Badge::count(7).on(lw::Avatar::new("Lace Style")))
+                    .child(lw::Badge::dot().tone(Tone::Success).on(lw::Avatar::new("Gpui Kit").tone(Tone::Info)))
+                    .child(lw::Badge::count(120).on(lw::Avatar::new("Weave").size(24.0).tone(Tone::Neutral)))
+                    .child(lw::Link::new("l-link", "Link")),
+            )
+            .child(lw::Separator::horizontal().label("Separator"))
+            .child(lw::Breadcrumb::new("l-crumbs", ["Home", "Projects", "Lace"]))
+            .child(
+                row()
+                    .child(lw::Skeleton::circle(28.0))
+                    .child(div().flex().flex_col().gap(px(6.)).child(lw::Skeleton::block(220.0, 12.0)).child(lw::Skeleton::block(160.0, 12.0))),
+            );
+
+        let feedback = div()
+            .flex()
+            .flex_col()
+            .gap(px(8.))
+            .child(lw::Alert::new(Tone::Info, "An informational alert.").title("Info"))
+            .child(lw::Alert::new(Tone::Success, "Saved."))
+            .child(lw::Alert::new(Tone::Warning, "Check the settings."))
+            .child(lw::Alert::new(Tone::Danger, "Something failed."));
+
+        let navigation = div()
+            .flex()
+            .flex_col()
+            .gap(px(12.))
+            .child(
+                lw::TabBar::new("l-tabs", ["General", "Appearance", "Advanced"])
+                    .current(self.tab)
+                    .on_select(upd(&w, |k, i| k.tab = i)),
+            )
+            .child(
+                lw::Segmented::new("l-tabs-seg", ["Day", "Week", "Month"])
+                    .selected(Some(self.tab))
+                    .on_select(upd(&w, |k, i| k.tab = i)),
+            )
+            .child(lw::Pagination::new("l-pages", self.page, 12).on_select(upd(&w, |k, p| k.page = p)))
+            .child(
+                lw::Stepper::new("l-stepper", ["Plan", "Build", "Test", "Ship"])
+                    .current(self.l_step)
+                    .on_select(upd(&w, |k, i| k.l_step = i)),
+            );
+
+        let accordion = lw::ToolBox::new("l-toolbox")
+            .page("What is this page?", div().child("The kit groups, drawn by LaceStyle."))
+            .page("Why?", div().child("To compare them with the stock components."))
+            .page("Tree", div().h(px(150.)).child(self.l_tree.clone()))
+            .current(self.l_tool)
+            .on_select(upd(&w, |k, i| k.l_tool = i));
+
+        vec![
+            lace_card("Buttons", buttons),
+            lace_card("Check box, switch, radio, rating", toggles),
+            lace_card("Line edit, spin box, combo box, text edit", inputs),
+            lace_card("Slider, progress, ring, spinner", ranges),
+            lace_card("Tags, badges, avatars, link, skeleton", display),
+            lace_card("Alerts", feedback),
+            lace_card("Tabs, segmented, pagination, stepper", navigation),
+            lace_card("Tool box (accordion) and tree", div().h(px(260.)).child(accordion)),
+        ]
+    }
+
+    /// The eight groups in gpui-kit's stock components.
+    fn stock_cards(&mut self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let buttons = div()
             .flex()
             .flex_col()
@@ -280,25 +532,15 @@ impl Render for Kit {
             )
         }));
 
-        div()
-            .p(px(12.))
-            .flex()
-            .flex_col()
-            .gap(px(10.))
-            .child(
-                div()
-                    .text_size(px(12.))
-                    .child("gpui-kit / gpui-component stock components, unstyled by LaceStyle: they follow the skin's theme colours only."),
-            )
-            .child(div().grid().grid_cols(2).gap(px(10.)).children([
-                card("Buttons", buttons),
-                card("Check box, switch, radio, rating", toggles),
-                card("Inputs, number input, select", inputs),
-                card("Slider, progress, spinner", ranges),
-                card("Tags, badges, avatars, labels, skeleton", display),
-                card("Alerts", feedback),
-                card("Tabs, pagination, stepper", navigation),
-                card("Accordion and tree", div().flex().flex_col().gap(px(10.)).child(accordion).child(kit_tree)),
-            ]))
+        vec![
+            card("Buttons", buttons),
+            card("Check box, switch, radio, rating", toggles),
+            card("Inputs, number input, select", inputs),
+            card("Slider, progress, spinner", ranges),
+            card("Tags, badges, avatars, labels, skeleton", display),
+            card("Alerts", feedback),
+            card("Tabs, pagination, stepper", navigation),
+            card("Accordion and tree", div().flex().flex_col().gap(px(10.)).child(accordion).child(kit_tree)),
+        ]
     }
 }
