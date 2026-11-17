@@ -282,7 +282,7 @@ impl Kit {
                     .gap(px(14.))
                     .child(lw::Badge::count(7).on(lw::Avatar::new("Lace Style")))
                     .child(lw::Badge::dot().tone(Tone::Success).on(lw::Avatar::new("Gpui Kit").tone(Tone::Info)))
-                    .child(lw::Badge::count(120).on(lw::Avatar::new("Weave").size(24.0).tone(Tone::Neutral)))
+                    .child(lw::Badge::count(120).on(lw::Avatar::new("Weave").size(28.0).tone(Tone::Neutral)))
                     .child(lw::Link::new("l-link", "Link")),
             )
             .child(lw::Separator::horizontal().label("Separator"))

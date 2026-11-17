@@ -5,7 +5,7 @@
 use std::time::Instant;
 
 use gpui_kit::gpui::{
-    canvas, div, prelude::FluentBuilder, px, AnyElement, App, ElementId, FontWeight, InteractiveElement,
+    canvas, div, prelude::FluentBuilder, px, relative, AnyElement, App, ElementId, FontWeight, InteractiveElement,
     IntoElement, ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 
@@ -26,6 +26,11 @@ fn seconds() -> f32 {
 // ---------------------------------------------------------------------------
 // Tag
 // ---------------------------------------------------------------------------
+
+/// Height of a tag, px.
+pub const TAG_H: f32 = 22.0;
+/// Height of a count badge, px.
+pub const BADGE_H: f32 = 18.0;
 
 /// A tag: a small label on a tone wash, or outlined.
 #[derive(IntoElement)]
@@ -77,13 +82,17 @@ impl RenderOnce for Tag {
             .flex()
             .flex_none()
             .items_center()
-            .h(px(18.))
-            .px(px(if self.pill { 8. } else { 6. }))
+            .justify_center()
+            .h(px(TAG_H))
+            .px(px(if self.pill { 10. } else { 8. }))
             .rounded(px(radius))
             .when_some(c.fill, |d, f| d.bg(hsla(f)))
             .border_1()
             .border_color(hsla(c.line))
-            .text_size(px(style.small_font_size))
+            .text_size(px(style.font_size))
+            // A line box as tall as the inner height keeps the glyphs on
+            // the vertical centre instead of riding the default leading.
+            .line_height(px(TAG_H - 2.0))
             .text_color(hsla(c.text))
             .whitespace_nowrap()
             .child(self.label)
@@ -140,17 +149,21 @@ impl RenderOnce for Badge {
         let style = cx.lace();
         let c = tones::solid(style, State::NORMAL, self.tone);
         let ring = hsla(style.active.window);
+        // Width the mark reaches past the child's right edge, kept as a
+        // margin so neighbours in a row are not overlapped.
+        let mut reach = 6.0;
         let mark = match (self.dot, self.count) {
             (true, _) => Some(
-                div().size(px(10.)).rounded_full().bg(hsla(c.fill.unwrap())).border_2().border_color(ring).into_any_element(),
+                div().size(px(12.)).rounded_full().bg(hsla(c.fill.unwrap())).border_2().border_color(ring).into_any_element(),
             ),
             (false, Some(n)) if n > 0 => {
                 let text = if n > self.max { format!("{}+", self.max) } else { n.to_string() };
+                reach = 6.0 + 7.0 * (text.chars().count() as f32 - 1.0);
                 Some(
                     div()
-                        .h(px(16.))
-                        .min_w(px(16.))
-                        .px(px(4.))
+                        .h(px(BADGE_H))
+                        .min_w(px(BADGE_H))
+                        .px(px(5.))
                         .flex()
                         .items_center()
                         .justify_center()
@@ -158,7 +171,8 @@ impl RenderOnce for Badge {
                         .bg(hsla(c.fill.unwrap()))
                         .border_1()
                         .border_color(ring)
-                        .text_size(px(10.))
+                        .text_size(px(11.))
+                        .line_height(px(BADGE_H - 2.0))
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(hsla(c.text))
                         .child(text)
@@ -167,8 +181,16 @@ impl RenderOnce for Badge {
             }
             _ => None,
         };
-        let mark = mark.map(|m| div().absolute().top(px(-6.)).right(px(-6.)).child(m));
-        div().relative().flex_none().when_some(self.child, |d, c| d.child(c)).when_some(mark, |d, m| d.child(m))
+        // The mark's left edge sits a little inside the child's right edge,
+        // so wide counts ("99+") grow outward instead of over the child.
+        let mark = mark.map(|m| div().absolute().top(px(-6.)).left(relative(0.72)).child(m));
+        let reach = if mark.is_some() { reach } else { 0.0 };
+        div()
+            .relative()
+            .flex_none()
+            .mr(px(reach))
+            .when_some(self.child, |d, c| d.child(c))
+            .when_some(mark, |d, m| d.child(m))
     }
 }
 
@@ -187,7 +209,7 @@ pub struct Avatar {
 impl Avatar {
     /// An avatar for `name`.
     pub fn new(name: impl Into<SharedString>) -> Self {
-        Self { name: name.into(), size: 28.0, tone: Tone::Accent }
+        Self { name: name.into(), size: 32.0, tone: Tone::Accent }
     }
 
     /// Diameter, px.
@@ -229,6 +251,7 @@ impl RenderOnce for Avatar {
             .border_1()
             .border_color(hsla(c.line))
             .text_size(px((self.size * 0.4).max(9.0)))
+            .line_height(px(self.size - 2.0))
             .font_weight(FontWeight::SEMIBOLD)
             .text_color(hsla(c.text))
             .child(initials(&self.name))
