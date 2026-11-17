@@ -62,7 +62,8 @@ use crate::edge_tabs::{self, EdgeTabBar, PinTarget, StripOptions, TabEdgeStyle};
 
 use gpui_kit::base::{
     dock::{
-        DockArea, DockAreaRenderer, DockContext, DockPlacement, DropIndicator, NodeId, PaneNode,
+        DockArea, DockAreaRenderer, DockContext, DockEvent, DockPlacement, DropIndicator, NodeId,
+        PaneNode,
         PaneRef, PanelId, PanelState, TabGroupContext, TabGroupRenderer,
     },
     ResizeHandleContext, ResizeHandleRenderer, ResizeHandleState,
@@ -72,9 +73,10 @@ use gpui_kit::component::dock::{
 };
 use gpui_kit::component::theme::ActiveTheme;
 use gpui_kit::gpui::{
-    deferred, div, point, prelude::FluentBuilder as _, px, relative, AnyElement, App,
+    canvas, deferred, div, point, prelude::FluentBuilder as _, px, relative, AnyElement, App,
     AppContext as _, Axis, BoxShadow, Div, Entity, Hsla, InteractiveElement as _, IntoElement,
-    ParentElement as _, Pixels, Point, Stateful, Styled as _, WeakEntity, Window,
+    MouseButton, MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels, Point, SharedString,
+    Stateful, Styled as _, WeakEntity, Window,
 };
 
 // ---------------------------------------------------------------------------
@@ -530,6 +532,8 @@ pub struct GeometryDockSkin {
     close_visible: Rc<Cell<bool>>,
     // Where the strip's pin button sends a panel; set by `Sidebars`.
     pin: PinSlot,
+    // The dock whose seam is being dragged, for the Lace dock edge.
+    dock_resizing: Rc<Cell<Option<DockPlacement>>>,
 }
 
 /// The installed pin target, shared with every group's strip.
@@ -560,6 +564,7 @@ impl GeometryDockSkin {
             panel_effects: Rc::new(RefCell::new(HashMap::new())),
             close_visible: Rc::new(Cell::new(false)),
             pin: Rc::new(RefCell::new(None)),
+            dock_resizing: Rc::new(Cell::new(None)),
         })
     }
 
@@ -650,7 +655,7 @@ impl DockAreaRenderer for GeometryDockSkin {
         let frame = self
             .inner
             .frame(window, cx)
-            .gap(style.gap.width)
+            .gap(dock_channel(&style))
             .p(style.gap.outer);
         match style.gap.background {
             Some(color) => frame.bg(color),
@@ -678,7 +683,7 @@ impl DockAreaRenderer for GeometryDockSkin {
         // dock. A flex gap here is the bottom-dock channel; the centre tree
         // absorbs it because it carries `flex_1`.
         let style = *self.style.borrow();
-        let frame = self.inner.center_frame(window, cx).gap(style.gap.width);
+        let frame = self.inner.center_frame(window, cx).gap(dock_channel(&style));
         match style.gap.background {
             Some(color) => frame.bg(color),
             None => frame.bg(cx.theme().tokens.background),
@@ -773,7 +778,103 @@ impl DockAreaRenderer for GeometryDockSkin {
         window: &mut Window,
         cx: &mut App,
     ) -> AnyElement {
-        self.inner.render_dock(dock, content, window, cx)
+        let style = *self.style.borrow();
+        if style.splitter.is_default() {
+            // The stock edge: gpui-component's hairline and its own tracker.
+            return self.inner.render_dock(dock, content, window, cx);
+        }
+
+        // Lace's dock edge. The seam between this dock and the centre is
+        // the dock's own padding (see `dock_channel`), so the whole seam is
+        // the grab strip, with the same bar the splits wear centred in it.
+        // gpui-component's dock handle cannot do this: its band is a fixed
+        // few pixels hugging the dock edge, and its bar is the stock pill.
+        let placement = dock.placement();
+        let seam = style.gap.width;
+        let splitter = style.splitter;
+        let resizing = self.dock_resizing.clone();
+        let dragging = resizing.get() == Some(placement);
+        let axis = match placement {
+            DockPlacement::Bottom => Axis::Vertical,
+            _ => Axis::Horizontal,
+        };
+        let group = SharedString::from(format!("lace-dock-seam:{placement:?}"));
+        let idle = splitter.colors.resolve(ResizeHandleState::Idle, cx);
+        let hovered = splitter.colors.resolve(ResizeHandleState::Hovered, cx);
+        let active = splitter.colors.resolve(ResizeHandleState::Dragging, cx);
+
+        let bar = seam_bar(splitter, axis)
+            .bg(if dragging { active } else { idle })
+            .when(!dragging, |bar| bar.group_hover(group.clone(), |s| s.bg(hovered)));
+
+        let strip = div()
+            .id(SharedString::from(format!("lace-dock-seam-strip:{placement:?}")))
+            .group(group)
+            .absolute()
+            .flex()
+            .items_center()
+            .justify_center()
+            .map(|strip| match placement {
+                DockPlacement::Left => strip.top_0().bottom_0().right_0().w(seam),
+                DockPlacement::Right => strip.top_0().bottom_0().left_0().w(seam),
+                _ => strip.left_0().right_0().top_0().h(seam),
+            })
+            .map(|strip| match axis {
+                Axis::Horizontal => strip.cursor_col_resize(),
+                Axis::Vertical => strip.cursor_row_resize(),
+            })
+            .on_mouse_down(MouseButton::Left, {
+                let resizing = resizing.clone();
+                move |_, window, cx| {
+                    resizing.set(Some(placement));
+                    window.refresh();
+                    cx.stop_propagation();
+                }
+            })
+            .child(bar);
+
+        // A drag runs on window-level events: the pointer leaves the strip
+        // within a pixel or two.
+        let tracker = canvas(|_, _, _| {}, {
+            let dock = dock.clone();
+            let area = self.area.clone();
+            move |_, _, window, _| {
+                window.on_mouse_event({
+                    let dock = dock.clone();
+                    let resizing = resizing.clone();
+                    move |event: &MouseMoveEvent, phase, window, cx| {
+                        if phase.bubble() && resizing.get() == Some(placement) {
+                            dock.resize_to(event.position, window, cx);
+                        }
+                    }
+                });
+                window.on_mouse_event(move |_: &MouseUpEvent, phase, window, cx| {
+                    if !phase.bubble() || resizing.get() != Some(placement) {
+                        return;
+                    }
+                    resizing.set(None);
+                    dock.end_resize(window, cx);
+                    _ = area.update(cx, |_, cx| cx.emit(DockEvent::LayoutChanged));
+                    window.refresh();
+                });
+            }
+        })
+        .absolute()
+        .size_0();
+
+        div()
+            .flex()
+            .size_full()
+            .relative()
+            .map(|this| match placement {
+                DockPlacement::Left => this.pr(seam),
+                DockPlacement::Right => this.pl(seam),
+                _ => this.pt(seam),
+            })
+            .child(content)
+            .child(strip)
+            .child(tracker)
+            .into_any_element()
     }
 
     fn build_placeholder(
@@ -796,6 +897,47 @@ impl DockAreaRenderer for GeometryDockSkin {
             style: self.style.clone(),
             panel_effects: self.panel_effects.clone(),
         })
+    }
+}
+
+/// The flex gap between the docks and the centre. The stock dock edge
+/// leaves the seam to this gap; Lace's edge carries it inside each dock (as
+/// padding its handle can cover), so the frames add none.
+fn dock_channel(style: &DockGeometryStyle) -> Pixels {
+    if style.splitter.is_default() {
+        style.gap.width
+    } else {
+        px(0.)
+    }
+}
+
+/// A splitter bar of the configured thickness, length and cap, for a seam
+/// strip that centres it. `axis` is the resize axis: `Horizontal` for a
+/// vertical bar between side-by-side regions.
+fn seam_bar(splitter: SplitterStyle, axis: Axis) -> Div {
+    let thickness = splitter.thickness.max(px(1.));
+    let bar = div()
+        .flex_none()
+        .when(splitter.cap == SplitterCap::Rounded, |bar| bar.rounded(thickness * 0.5));
+    let bar = match (axis, splitter.length) {
+        (Axis::Horizontal, SplitterLength::Pixels(length)) => bar.w(thickness).h(length),
+        (Axis::Vertical, SplitterLength::Pixels(length)) => bar.h(thickness).w(length),
+        (Axis::Horizontal, SplitterLength::Percent(f)) => {
+            bar.w(thickness).h(relative(f.clamp(0.0, 1.0)))
+        }
+        (Axis::Vertical, SplitterLength::Percent(f)) => {
+            bar.h(thickness).w(relative(f.clamp(0.0, 1.0)))
+        }
+        (Axis::Horizontal, SplitterLength::Insets { start, end }) => {
+            bar.w(thickness).h_full().mt(start).mb(end)
+        }
+        (Axis::Vertical, SplitterLength::Insets { start, end }) => {
+            bar.h(thickness).w_full().ml(start).mr(end)
+        }
+    };
+    match axis {
+        Axis::Horizontal => bar.min_h(thickness),
+        Axis::Vertical => bar.min_w(thickness),
     }
 }
 
