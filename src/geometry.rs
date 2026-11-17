@@ -73,10 +73,10 @@ use gpui_kit::component::dock::{
 };
 use gpui_kit::component::theme::ActiveTheme;
 use gpui_kit::gpui::{
-    canvas, deferred, div, point, prelude::FluentBuilder as _, px, relative, AnyElement, App,
+    canvas, deferred, div, point, Animation, AnimationExt as _, prelude::FluentBuilder as _, px, relative, AnyElement, App,
     AppContext as _, Axis, BoxShadow, Div, Entity, Hsla, InteractiveElement as _, IntoElement,
     MouseButton, MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels, Point, SharedString,
-    Stateful, Styled as _, WeakEntity, Window,
+    Stateful, StatefulInteractiveElement as _, Styled as _, WeakEntity, Window,
 };
 
 // ---------------------------------------------------------------------------
@@ -532,8 +532,10 @@ pub struct GeometryDockSkin {
     close_visible: Rc<Cell<bool>>,
     // Where the strip's pin button sends a panel; set by `Sidebars`.
     pin: PinSlot,
-    // The dock whose seam is being dragged, for the Lace dock edge.
+    // The dock whose seam is being dragged, and the one under the pointer,
+    // for the Lace dock edge.
     dock_resizing: Rc<Cell<Option<DockPlacement>>>,
+    dock_hovered: Rc<Cell<Option<DockPlacement>>>,
 }
 
 /// The installed pin target, shared with every group's strip.
@@ -565,6 +567,7 @@ impl GeometryDockSkin {
             close_visible: Rc::new(Cell::new(false)),
             pin: Rc::new(RefCell::new(None)),
             dock_resizing: Rc::new(Cell::new(None)),
+            dock_hovered: Rc::new(Cell::new(None)),
         })
     }
 
@@ -706,47 +709,17 @@ impl DockAreaRenderer for GeometryDockSkin {
         }
 
         let axis = handle.axis();
-        let thickness = splitter.thickness.max(px(1.));
-        let color = splitter.colors.resolve(handle.state(), cx);
-
-        let visual = div()
-            .flex_none()
-            .bg(color)
-            .when(splitter.cap == SplitterCap::Rounded, |bar| {
-                bar.rounded(thickness * 0.5)
-            })
-            .map(|bar| match (axis, splitter.length) {
-                (Axis::Horizontal, SplitterLength::Pixels(length)) => bar
-                    .w(thickness)
-                    .h(length.max(thickness))
-                    .ml((thickness - px(1.)) * -0.5),
-                (Axis::Vertical, SplitterLength::Pixels(length)) => bar
-                    .h(thickness)
-                    .w(length.max(thickness))
-                    .mt((thickness - px(1.)) * -0.5),
-                (Axis::Horizontal, SplitterLength::Percent(fraction)) => bar
-                    .w(thickness)
-                    .h(relative(fraction.clamp(0.0, 1.0)))
-                    .ml((thickness - px(1.)) * -0.5),
-                (Axis::Vertical, SplitterLength::Percent(fraction)) => bar
-                    .h(thickness)
-                    .w(relative(fraction.clamp(0.0, 1.0)))
-                    .mt((thickness - px(1.)) * -0.5),
-                // Insets are spacers on the full-length wrapper; the bar itself
-                // fills what is left, so no measurement is involved.
-                (Axis::Horizontal, SplitterLength::Insets { .. }) => {
-                    bar.w(thickness).h_full().ml((thickness - px(1.)) * -0.5)
-                }
-                (Axis::Vertical, SplitterLength::Insets { .. }) => {
-                    bar.h(thickness).w_full().mt((thickness - px(1.)) * -0.5)
-                }
-            })
-            // A degenerate configuration must still leave something to grab
-            // visually, so the bar is never shorter than it is thick.
-            .map(|bar| match axis {
-                Axis::Horizontal => bar.min_h(thickness),
-                Axis::Vertical => bar.min_w(thickness),
-            });
+        let state = handle.state();
+        let color = splitter.colors.resolve(state, cx);
+        // The bar is centred on the wrapper's one-pixel line.
+        let visual = animated_bar(
+            "lace-split-bar",
+            splitter,
+            axis,
+            color,
+            state != ResizeHandleState::Idle,
+            true,
+        );
 
         let mut wrapper = div().flex_none().flex();
         wrapper = match axis {
@@ -798,18 +771,28 @@ impl DockAreaRenderer for GeometryDockSkin {
             DockPlacement::Bottom => Axis::Vertical,
             _ => Axis::Horizontal,
         };
-        let group = SharedString::from(format!("lace-dock-seam:{placement:?}"));
-        let idle = splitter.colors.resolve(ResizeHandleState::Idle, cx);
-        let hovered = splitter.colors.resolve(ResizeHandleState::Hovered, cx);
-        let active = splitter.colors.resolve(ResizeHandleState::Dragging, cx);
-
-        let bar = seam_bar(splitter, axis)
-            .bg(if dragging { active } else { idle })
-            .when(!dragging, |bar| bar.group_hover(group.clone(), |s| s.bg(hovered)));
+        // Hover is tracked rather than styled, so the bar re-renders and its
+        // entrance animation runs.
+        let hovered = self.dock_hovered.get() == Some(placement);
+        let state = if dragging {
+            ResizeHandleState::Dragging
+        } else if hovered {
+            ResizeHandleState::Hovered
+        } else {
+            ResizeHandleState::Idle
+        };
+        let color = splitter.colors.resolve(state, cx);
+        let bar = animated_bar(
+            "lace-dock-seam-bar",
+            splitter,
+            axis,
+            color,
+            state != ResizeHandleState::Idle,
+            false,
+        );
 
         let strip = div()
             .id(SharedString::from(format!("lace-dock-seam-strip:{placement:?}")))
-            .group(group)
             .absolute()
             .flex()
             .items_center()
@@ -822,6 +805,22 @@ impl DockAreaRenderer for GeometryDockSkin {
             .map(|strip| match axis {
                 Axis::Horizontal => strip.cursor_col_resize(),
                 Axis::Vertical => strip.cursor_row_resize(),
+            })
+            .map(|strip| match (splitter.length, axis) {
+                (SplitterLength::Insets { start, end }, Axis::Horizontal) => strip.pt(start).pb(end),
+                (SplitterLength::Insets { start, end }, Axis::Vertical) => strip.pl(start).pr(end),
+                _ => strip,
+            })
+            .on_hover({
+                let hovered = self.dock_hovered.clone();
+                move |over, window, _| {
+                    if *over {
+                        hovered.set(Some(placement));
+                    } else if hovered.get() == Some(placement) {
+                        hovered.set(None);
+                    }
+                    window.refresh();
+                }
             })
             .on_mouse_down(MouseButton::Left, {
                 let resizing = resizing.clone();
@@ -911,34 +910,82 @@ fn dock_channel(style: &DockGeometryStyle) -> Pixels {
     }
 }
 
-/// A splitter bar of the configured thickness, length and cap, for a seam
-/// strip that centres it. `axis` is the resize axis: `Horizontal` for a
-/// vertical bar between side-by-side regions.
-fn seam_bar(splitter: SplitterStyle, axis: Axis) -> Div {
-    let thickness = splitter.thickness.max(px(1.));
+/// How long a splitter bar takes to grow in when the pointer reaches it.
+const BAR_GROW: std::time::Duration = std::time::Duration::from_millis(160);
+
+/// A splitter bar at `progress` (0 to 1) of its entrance: thickness and
+/// length grow from half to full and the colour fades in from 10%. Insets
+/// are the caller's padding; the bar fills what is left. `on_line` centres
+/// it on a one-pixel line (the split handle's) instead of in a strip.
+/// `axis` is the resize axis: `Horizontal` for a vertical bar between
+/// side-by-side regions.
+fn splitter_bar(
+    splitter: SplitterStyle,
+    axis: Axis,
+    color: Hsla,
+    progress: f32,
+    on_line: bool,
+) -> Div {
+    let scale = 0.5 + 0.5 * progress;
+    let thickness = splitter.thickness.max(px(1.)) * scale;
+    let color = color.opacity(0.1 + 0.9 * progress);
     let bar = div()
         .flex_none()
+        .bg(color)
         .when(splitter.cap == SplitterCap::Rounded, |bar| bar.rounded(thickness * 0.5));
     let bar = match (axis, splitter.length) {
-        (Axis::Horizontal, SplitterLength::Pixels(length)) => bar.w(thickness).h(length),
-        (Axis::Vertical, SplitterLength::Pixels(length)) => bar.h(thickness).w(length),
+        (Axis::Horizontal, SplitterLength::Pixels(length)) => {
+            bar.w(thickness).h((length * scale).max(thickness))
+        }
+        (Axis::Vertical, SplitterLength::Pixels(length)) => {
+            bar.h(thickness).w((length * scale).max(thickness))
+        }
         (Axis::Horizontal, SplitterLength::Percent(f)) => {
-            bar.w(thickness).h(relative(f.clamp(0.0, 1.0)))
+            bar.w(thickness).h(relative(f.clamp(0.0, 1.0) * scale))
         }
         (Axis::Vertical, SplitterLength::Percent(f)) => {
-            bar.h(thickness).w(relative(f.clamp(0.0, 1.0)))
+            bar.h(thickness).w(relative(f.clamp(0.0, 1.0) * scale))
         }
-        (Axis::Horizontal, SplitterLength::Insets { start, end }) => {
-            bar.w(thickness).h_full().mt(start).mb(end)
+        (Axis::Horizontal, SplitterLength::Insets { .. }) => {
+            bar.w(thickness).h(relative(scale))
         }
-        (Axis::Vertical, SplitterLength::Insets { start, end }) => {
-            bar.h(thickness).w_full().ml(start).mr(end)
-        }
+        (Axis::Vertical, SplitterLength::Insets { .. }) => bar.h(thickness).w(relative(scale)),
     };
-    match axis {
+    // A degenerate configuration must still leave something to grab
+    // visually, so the bar is never shorter than it is thick.
+    let bar = match axis {
         Axis::Horizontal => bar.min_h(thickness),
         Axis::Vertical => bar.min_w(thickness),
+    };
+    match (on_line, axis) {
+        (false, _) => bar,
+        (true, Axis::Horizontal) => bar.ml((thickness - px(1.)) * -0.5),
+        (true, Axis::Vertical) => bar.mt((thickness - px(1.)) * -0.5),
     }
+}
+
+/// A splitter bar that grows in when `engaged` (hovered, pressed or
+/// dragged) and sits at full size, in its idle colour, otherwise. The
+/// animation restarts whenever the bar becomes engaged, because the element
+/// id changes with it.
+fn animated_bar(
+    id: &'static str,
+    splitter: SplitterStyle,
+    axis: Axis,
+    color: Hsla,
+    engaged: bool,
+    on_line: bool,
+) -> AnyElement {
+    if !engaged {
+        return splitter_bar(splitter, axis, color, 1.0, on_line).into_any_element();
+    }
+    splitter_bar(splitter, axis, color, 0.0, on_line)
+        .with_animation(
+            SharedString::from(format!("{id}:engaged")),
+            Animation::new(BAR_GROW).with_easing(|t| 1.0 - (1.0 - t).powi(3)),
+            move |_, progress| splitter_bar(splitter, axis, color, progress, on_line),
+        )
+        .into_any_element()
 }
 
 /// The tab-group half of the skin. State is shared through `Rc`, so a style
