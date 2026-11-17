@@ -202,7 +202,7 @@ impl Stepper {
 }
 
 /// Diameter of a stepper node, px.
-const NODE: f32 = 22.0;
+const NODE: f32 = 24.0;
 
 impl RenderOnce for Stepper {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
@@ -228,6 +228,9 @@ impl RenderOnce for Stepper {
                 .border_1()
                 .border_color(hsla(c.line))
                 .text_size(px(style.small_font_size))
+                // A line box as tall as the inside of the ring centres the
+                // digit's glyph box, not just its baseline slot.
+                .line_height(px(NODE - 2.0))
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(text)
                 .map(|d| {

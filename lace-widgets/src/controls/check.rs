@@ -15,6 +15,9 @@ use crate::style::{hsla, ActiveStyle, LaceStyle, State};
 
 /// Indicator side, px (Fusion's `PM_IndicatorWidth` at 96 dpi).
 pub const INDICATOR: f32 = 14.0;
+/// Radio indicator side, px. A circle reads smaller than a square of the
+/// same side, so the radio is a step larger than the check box.
+pub const RADIO: f32 = 16.0;
 /// Gap between an indicator and its label, px.
 pub const LABEL_GAP: f32 = 6.0;
 
@@ -71,7 +74,13 @@ pub fn check_indicator(style: &LaceStyle, s: State, size: f32) -> impl IntoEleme
 pub fn radio_indicator(style: &LaceStyle, s: State, size: f32) -> impl IntoElement {
     let ind = rules::radio(style, s);
     let on = s.checked;
-    let dot = size * (1.0 - 2.0 * 0.28);
+    // Lace's dot is 44% of the indicator. Rounded to a whole pixel with the
+    // same parity as `size`, so the gap around it is whole and the dot lands
+    // dead centre instead of snapping half a pixel to one side.
+    let dot = {
+        let d = (size * 0.44).round();
+        if (size - d) % 2.0 == 0.0 { d } else { d + 1.0 }
+    };
     div()
         .size(px(size))
         .flex_none()
@@ -274,7 +283,7 @@ impl RenderOnce for RadioButton {
             .rounded(px(style.control_radius))
             .text_size(px(style.font_size))
             .text_color(hsla(text))
-            .child(radio_indicator(&style, s, INDICATOR))
+            .child(radio_indicator(&style, s, RADIO))
             .when_some(self.label, |d, l| d.child(l))
             .when_some(ring, |d, r| d.border(px(1.)).border_color(hsla(r)));
         let el = ix.bind(el, s.disabled);

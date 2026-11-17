@@ -11,7 +11,10 @@
 //! frames further (6px / 8px), which Lace's presets do not.
 
 use crate::color::rgba;
-use crate::engine::{Contrast, Depth, HoverMode, Rel, Scrollbar, Selection, ThemeSpec, TitleMode};
+use crate::engine::{
+    Contrast, Depth, HoverMode, Rel, Scrollbar, Selection, SideTabFlat, TabIndicator, ThemeSpec,
+    TitleMode,
+};
 
 /// Lace's classic Basics hold inactive edges at this alpha
 /// (`_BASIC_CLASSIC_IDLE_ALPHA`), so the focused area's accent frame is the
@@ -172,6 +175,7 @@ pub const LIGHT: ThemeSpec = ThemeSpec {
 /// High-contrast dark theme with vibrant purple highlights.
 pub const DRACULA: ThemeSpec = ThemeSpec {
     name: "dracula",
+    tab_dimming: false,
     base: rgba(40, 42, 54, 255),
     accent: rgba(189, 147, 249, 255),
     text: rgba(248, 248, 242, 255),
@@ -189,6 +193,7 @@ pub const DRACULA: ThemeSpec = ThemeSpec {
 /// darker hovers, like the Basics.
 pub const MONOKAI: ThemeSpec = ThemeSpec {
     name: "monokai",
+    tab_dimming: false,
     base: rgba(28, 26, 29, 255),
     accent: rgba(255, 216, 102, 255),
     text: rgba(248, 248, 242, 255),
@@ -201,6 +206,7 @@ pub const MONOKAI: ThemeSpec = ThemeSpec {
 /// Frosty and crisp.
 pub const NORDIC: ThemeSpec = ThemeSpec {
     name: "nordic",
+    tab_dimming: false,
     base: rgba(40, 46, 58, 255),
     accent: rgba(136, 192, 208, 255),
     text: rgba(236, 239, 244, 255),
@@ -213,6 +219,7 @@ pub const NORDIC: ThemeSpec = ThemeSpec {
 /// Soothing pastel dark aesthetic.
 pub const CATPPUCCIN: ThemeSpec = ThemeSpec {
     name: "catppuccin",
+    tab_dimming: false,
     base: rgba(30, 30, 46, 255),
     accent: rgba(203, 166, 247, 255),
     text: rgba(205, 214, 244, 255),
@@ -229,6 +236,7 @@ pub const CATPPUCCIN: ThemeSpec = ThemeSpec {
 /// Clean neon-accented dark theme.
 pub const TOKYO_NIGHT: ThemeSpec = ThemeSpec {
     name: "tokyo_night",
+    tab_dimming: false,
     base: rgba(26, 27, 38, 255),
     accent: rgba(122, 162, 247, 255),
     text: rgba(192, 202, 245, 255),
@@ -245,6 +253,7 @@ pub const TOKYO_NIGHT: ThemeSpec = ThemeSpec {
 /// Precision low-eye-strain teal/cyan dark palette.
 pub const SOLARIZED_DARK: ThemeSpec = ThemeSpec {
     name: "solarized_dark",
+    tab_dimming: false,
     base: rgba(0, 43, 54, 255),
     accent: rgba(38, 139, 210, 255),
     text: rgba(131, 148, 150, 255),
@@ -261,6 +270,7 @@ pub const SOLARIZED_DARK: ThemeSpec = ThemeSpec {
 /// Precision low-eye-strain warm cream light palette.
 pub const SOLARIZED_LIGHT: ThemeSpec = ThemeSpec {
     name: "solarized_light",
+    tab_dimming: false,
     base: rgba(253, 246, 227, 255),
     accent: rgba(38, 139, 210, 255),
     text: rgba(101, 123, 131, 255),
@@ -285,6 +295,8 @@ pub const SOLARIZED_LIGHT: ThemeSpec = ThemeSpec {
 /// 10px cards, 8px tab tops.
 pub const CYBERPUNK_NEON: ThemeSpec = ThemeSpec {
     name: "cyberpunk_neon",
+    sidebar_tab_outline: 1.5,
+    sidebar_tab_flat: SideTabFlat::None,
     base: rgba(14, 11, 28, 255),
     accent: rgba(255, 0, 127, 255),
     text: rgba(245, 245, 255, 255),
@@ -311,6 +323,8 @@ pub const CYBERPUNK_NEON: ThemeSpec = ThemeSpec {
 /// darker tab strip so the outlines read, the same 10px/8px geometry.
 pub const NEON_DUSK: ThemeSpec = ThemeSpec {
     name: "neon_dusk",
+    sidebar_tab_outline: 2.0,
+    sidebar_tab_flat: SideTabFlat::Outward,
     base: rgba(34, 36, 48, 255),
     accent: rgba(255, 92, 170, 255),
     text: rgba(240, 240, 248, 255),
@@ -330,6 +344,10 @@ pub const NEON_DUSK: ThemeSpec = ThemeSpec {
     title_height: 32.0,
     control_radius: NEO_CONTROL_RADIUS,
     frame_radius: Some(NEO_FRAME_RADIUS),
+    title_rule: 2.0,
+    tab_outline: 2.0,
+    tab_outline_color: Some(rgba(98, 114, 164, 160)),
+    tab_outline_active: Some(rgba(255, 92, 170, 255)),
     ..EDITOR_CLASSIC
 };
 
@@ -362,6 +380,8 @@ pub const BASIC_NEO: ThemeSpec = ThemeSpec {
 /// Midnight on the Neo chassis.
 pub const MIDNIGHT_NEO: ThemeSpec = ThemeSpec {
     name: "midnight_neo",
+    sidebar_tab_outline: 1.5,
+    sidebar_tab_flat: SideTabFlat::None,
     base: rgba(11, 13, 20, 255),
     surface: Some(rgba(17, 21, 31, 255)),
     border: Some(rgba(25, 30, 42, 255)),
@@ -378,6 +398,8 @@ pub const MIDNIGHT_NEO: ThemeSpec = ThemeSpec {
 /// Dark on the Neo chassis.
 pub const DARK_NEO: ThemeSpec = ThemeSpec {
     name: "dark_neo",
+    sidebar_tab_outline: 1.5,
+    sidebar_tab_flat: SideTabFlat::None,
     base: rgba(18, 19, 20, 255),
     surface: Some(rgba(25, 26, 27, 255)),
     border: Some(rgba(37, 38, 39, 255)),
@@ -394,6 +416,8 @@ pub const DARK_NEO: ThemeSpec = ThemeSpec {
 /// Mocha on the Neo chassis.
 pub const MOCHA_NEO: ThemeSpec = ThemeSpec {
     name: "mocha_neo",
+    sidebar_tab_outline: 1.5,
+    sidebar_tab_flat: SideTabFlat::None,
     base: rgba(36, 30, 27, 255),
     surface: Some(rgba(46, 39, 35, 255)),
     border: Some(rgba(60, 51, 46, 255)),
@@ -410,6 +434,8 @@ pub const MOCHA_NEO: ThemeSpec = ThemeSpec {
 /// Slate on the Neo chassis.
 pub const SLATE_NEO: ThemeSpec = ThemeSpec {
     name: "slate_neo",
+    sidebar_tab_outline: 1.5,
+    sidebar_tab_flat: SideTabFlat::None,
     base: rgba(150, 156, 166, 255),
     surface: Some(rgba(168, 174, 184, 255)),
     border: Some(rgba(132, 138, 148, 255)),
@@ -427,6 +453,8 @@ pub const SLATE_NEO: ThemeSpec = ThemeSpec {
 /// Caramel on the Neo chassis.
 pub const CARAMEL_NEO: ThemeSpec = ThemeSpec {
     name: "caramel_neo",
+    sidebar_tab_outline: 1.5,
+    sidebar_tab_flat: SideTabFlat::None,
     base: rgba(197, 194, 189, 255),
     surface: Some(rgba(217, 214, 207, 255)),
     border: Some(rgba(167, 162, 151, 255)),
@@ -444,6 +472,8 @@ pub const CARAMEL_NEO: ThemeSpec = ThemeSpec {
 /// Neutral on the Neo chassis.
 pub const NEUTRAL_NEO: ThemeSpec = ThemeSpec {
     name: "neutral_neo",
+    sidebar_tab_outline: 1.5,
+    sidebar_tab_flat: SideTabFlat::None,
     base: rgba(190, 191, 194, 255),
     surface: Some(rgba(210, 211, 214, 255)),
     border: Some(rgba(170, 171, 175, 255)),
@@ -461,6 +491,8 @@ pub const NEUTRAL_NEO: ThemeSpec = ThemeSpec {
 /// Cream on the Neo chassis.
 pub const CREAM_NEO: ThemeSpec = ThemeSpec {
     name: "cream_neo",
+    sidebar_tab_outline: 1.5,
+    sidebar_tab_flat: SideTabFlat::None,
     base: rgba(240, 235, 225, 255),
     surface: Some(rgba(252, 249, 243, 255)),
     border: Some(rgba(226, 219, 207, 255)),
@@ -477,6 +509,8 @@ pub const CREAM_NEO: ThemeSpec = ThemeSpec {
 /// Light on the Neo chassis.
 pub const LIGHT_NEO: ThemeSpec = ThemeSpec {
     name: "light_neo",
+    sidebar_tab_outline: 1.5,
+    sidebar_tab_flat: SideTabFlat::None,
     base: rgba(238, 238, 241, 255),
     surface: Some(rgba(249, 249, 252, 255)),
     border: Some(rgba(225, 225, 228, 255)),
@@ -496,12 +530,14 @@ pub const LIGHT_NEO: ThemeSpec = ThemeSpec {
 // ===========================================================================
 
 // Lace's four outline designs, each a family of dark, neutral and light.
-// The colours and radii port one for one; the tab-outline, title-rule and
+// The colours, radii, tab outlines and title rules port one for one; the
 // sidebar-edge geometry they also set has no ThemeSpec field here yet.
 
 /// Night-city amber on near-black plum: a violet frame and title rule that burn amber on focus.
 pub const CYBERPUNK_EDGE: ThemeSpec = ThemeSpec {
     name: "cyberpunk_edge",
+    sidebar_tab_outline: 1.5,
+    sidebar_tab_flat: SideTabFlat::None,
     base: rgba(17, 13, 20, 255),
     accent: rgba(255, 154, 0, 255),
     text: rgba(242, 232, 224, 255),
@@ -523,12 +559,18 @@ pub const CYBERPUNK_EDGE: ThemeSpec = ThemeSpec {
     title_height: 32.0,
     control_radius: NEO_CONTROL_RADIUS,
     frame_radius: Some(NEO_FRAME_RADIUS),
+    title_rule: 1.5,
+    title_rule_focus: Some(rgba(255, 154, 0, 255)),
+    tab_indicator: TabIndicator::Bottom,
+    tab_indicator_width: 1.5,
     ..EDITOR_CLASSIC
 };
 
 /// cyberpunk_edge at dusk: grey grounds with the plum cast, burnt amber and violet kept.
 pub const CYBERPUNK_EDGE_NEUTRAL: ThemeSpec = ThemeSpec {
     name: "cyberpunk_edge_neutral",
+    sidebar_tab_outline: 1.5,
+    sidebar_tab_flat: SideTabFlat::None,
     base: rgba(164, 160, 166, 255),
     accent: rgba(148, 72, 0, 255),
     text: rgba(38, 32, 42, 255),
@@ -551,12 +593,18 @@ pub const CYBERPUNK_EDGE_NEUTRAL: ThemeSpec = ThemeSpec {
     title_height: 32.0,
     control_radius: NEO_CONTROL_RADIUS,
     frame_radius: Some(NEO_FRAME_RADIUS),
+    title_rule: 1.5,
+    title_rule_focus: Some(rgba(148, 72, 0, 255)),
+    tab_indicator: TabIndicator::Bottom,
+    tab_indicator_width: 1.5,
     ..EDITOR_CLASSIC
 };
 
 /// cyberpunk_edge in daylight: lilac-white panels, a darker amber, the same violet frame.
 pub const CYBERPUNK_EDGE_LIGHT: ThemeSpec = ThemeSpec {
     name: "cyberpunk_edge_light",
+    sidebar_tab_outline: 1.5,
+    sidebar_tab_flat: SideTabFlat::None,
     base: rgba(231, 226, 235, 255),
     accent: rgba(186, 98, 0, 255),
     text: rgba(40, 32, 44, 255),
@@ -579,12 +627,19 @@ pub const CYBERPUNK_EDGE_LIGHT: ThemeSpec = ThemeSpec {
     title_height: 32.0,
     control_radius: NEO_CONTROL_RADIUS,
     frame_radius: Some(NEO_FRAME_RADIUS),
+    title_rule: 1.5,
+    title_rule_focus: Some(rgba(186, 98, 0, 255)),
+    tab_indicator: TabIndicator::Bottom,
+    tab_indicator_width: 1.5,
     ..EDITOR_CLASSIC
 };
 
 /// Dracula's palette on cyberpunk_edge's geometry: every tab outlined, the active one in violet.
 pub const VIOLET_HAZE: ThemeSpec = ThemeSpec {
     name: "violet_haze",
+    sidebar_tab_outline: 2.0,
+    sidebar_tab_flat: SideTabFlat::None,
+    border_below_title: true,
     base: rgba(40, 42, 54, 255),
     accent: rgba(189, 147, 249, 255),
     text: rgba(248, 248, 242, 255),
@@ -606,12 +661,19 @@ pub const VIOLET_HAZE: ThemeSpec = ThemeSpec {
     title_height: 32.0,
     control_radius: NEO_CONTROL_RADIUS,
     frame_radius: Some(NEO_FRAME_RADIUS),
+    title_rule: 2.0,
+    tab_outline: 2.0,
+    tab_outline_color: Some(rgba(98, 114, 164, 200)),
+    tab_outline_active: Some(rgba(189, 147, 249, 255)),
     ..EDITOR_CLASSIC
 };
 
 /// violet_haze on grey grounds with a cool trace, the violet deepened to read on them.
 pub const VIOLET_HAZE_NEUTRAL: ThemeSpec = ThemeSpec {
     name: "violet_haze_neutral",
+    sidebar_tab_outline: 2.0,
+    sidebar_tab_flat: SideTabFlat::None,
+    border_below_title: true,
     base: rgba(164, 164, 169, 255),
     accent: rgba(104, 60, 176, 255),
     text: rgba(36, 34, 44, 255),
@@ -634,12 +696,19 @@ pub const VIOLET_HAZE_NEUTRAL: ThemeSpec = ThemeSpec {
     title_height: 32.0,
     control_radius: NEO_CONTROL_RADIUS,
     frame_radius: Some(NEO_FRAME_RADIUS),
+    title_rule: 2.0,
+    tab_outline: 2.0,
+    tab_outline_color: Some(rgba(96, 108, 150, 215)),
+    tab_outline_active: Some(rgba(104, 60, 176, 255)),
     ..EDITOR_CLASSIC
 };
 
 /// violet_haze on lavender-white, a deeper violet for the active outline.
 pub const VIOLET_HAZE_LIGHT: ThemeSpec = ThemeSpec {
     name: "violet_haze_light",
+    sidebar_tab_outline: 2.0,
+    sidebar_tab_flat: SideTabFlat::None,
+    border_below_title: true,
     base: rgba(230, 228, 238, 255),
     accent: rgba(124, 77, 196, 255),
     text: rgba(40, 36, 52, 255),
@@ -662,12 +731,20 @@ pub const VIOLET_HAZE_LIGHT: ThemeSpec = ThemeSpec {
     title_height: 32.0,
     control_radius: NEO_CONTROL_RADIUS,
     frame_radius: Some(NEO_FRAME_RADIUS),
+    title_rule: 2.0,
+    tab_outline: 2.0,
+    tab_outline_color: Some(rgba(163, 157, 190, 210)),
+    tab_outline_active: Some(rgba(124, 77, 196, 255)),
     ..EDITOR_CLASSIC
 };
 
 /// Blue-black with a periwinkle accent: only the active tab is outlined.
 pub const MIDNIGHT_HAZE: ThemeSpec = ThemeSpec {
     name: "midnight_haze",
+    sidebar_tab_outline: 2.0,
+    sidebar_tab_flat: SideTabFlat::None,
+    border_below_title: true,
+    tab_outline_unfocused: Some(rgba(0, 0, 0, 0)),
     base: rgba(24, 26, 35, 255),
     accent: rgba(125, 124, 252, 255),
     text: rgba(229, 232, 236, 255),
@@ -689,12 +766,20 @@ pub const MIDNIGHT_HAZE: ThemeSpec = ThemeSpec {
     title_height: 32.0,
     control_radius: NEO_CONTROL_RADIUS,
     frame_radius: Some(NEO_FRAME_RADIUS),
+    title_rule: 2.0,
+    tab_outline: 2.0,
+    tab_outline_color: Some(rgba(0, 0, 0, 0)),
+    tab_outline_active: Some(rgba(125, 124, 252, 255)),
     ..EDITOR_CLASSIC
 };
 
 /// midnight_haze on cool grey grounds, the periwinkle deepened to indigo.
 pub const MIDNIGHT_HAZE_NEUTRAL: ThemeSpec = ThemeSpec {
     name: "midnight_haze_neutral",
+    sidebar_tab_outline: 2.0,
+    sidebar_tab_flat: SideTabFlat::None,
+    border_below_title: true,
+    tab_outline_unfocused: Some(rgba(0, 0, 0, 0)),
     base: rgba(163, 163, 168, 255),
     accent: rgba(66, 65, 192, 255),
     text: rgba(28, 30, 40, 255),
@@ -717,12 +802,20 @@ pub const MIDNIGHT_HAZE_NEUTRAL: ThemeSpec = ThemeSpec {
     title_height: 32.0,
     control_radius: NEO_CONTROL_RADIUS,
     frame_radius: Some(NEO_FRAME_RADIUS),
+    title_rule: 2.0,
+    tab_outline: 2.0,
+    tab_outline_color: Some(rgba(0, 0, 0, 0)),
+    tab_outline_active: Some(rgba(66, 65, 192, 255)),
     ..EDITOR_CLASSIC
 };
 
 /// midnight_haze on blue-white, an indigo outline on the active tab.
 pub const MIDNIGHT_HAZE_LIGHT: ThemeSpec = ThemeSpec {
     name: "midnight_haze_light",
+    sidebar_tab_outline: 2.0,
+    sidebar_tab_flat: SideTabFlat::None,
+    border_below_title: true,
+    tab_outline_unfocused: Some(rgba(0, 0, 0, 0)),
     base: rgba(227, 229, 237, 255),
     accent: rgba(83, 82, 214, 255),
     text: rgba(28, 30, 40, 255),
@@ -745,12 +838,18 @@ pub const MIDNIGHT_HAZE_LIGHT: ThemeSpec = ThemeSpec {
     title_height: 32.0,
     control_radius: NEO_CONTROL_RADIUS,
     frame_radius: Some(NEO_FRAME_RADIUS),
+    title_rule: 2.0,
+    tab_outline: 2.0,
+    tab_outline_color: Some(rgba(0, 0, 0, 0)),
+    tab_outline_active: Some(rgba(83, 82, 214, 255)),
     ..EDITOR_CLASSIC
 };
 
 /// slate_amber's warm slate and amber in the dark, on the 4px chassis.
 pub const SLATE_AMBER_DARK: ThemeSpec = ThemeSpec {
     name: "slate_amber_dark",
+    sidebar_tab_outline: 1.5,
+    sidebar_tab_flat: SideTabFlat::None,
     base: rgba(42, 40, 37, 255),
     accent: rgba(230, 150, 45, 255),
     text: rgba(232, 228, 222, 255),
@@ -770,12 +869,18 @@ pub const SLATE_AMBER_DARK: ThemeSpec = ThemeSpec {
     tab_radius: 4.0,
     border_width: 1.5,
     title_height: 30.0,
+    title_rule: 1.5,
+    title_rule_focus: Some(rgba(230, 150, 45, 255)),
+    tab_indicator: TabIndicator::Bottom,
+    tab_indicator_width: 1.5,
     ..EDITOR_CLASSIC
 };
 
 /// Machine-grey slate with burnt amber: a 4px chassis whose title rule turns amber on focus.
 pub const SLATE_AMBER: ThemeSpec = ThemeSpec {
     name: "slate_amber",
+    sidebar_tab_outline: 1.5,
+    sidebar_tab_flat: SideTabFlat::None,
     base: rgba(196, 194, 190, 255),
     accent: rgba(186, 98, 0, 255),
     text: rgba(38, 34, 30, 255),
@@ -792,12 +897,18 @@ pub const SLATE_AMBER: ThemeSpec = ThemeSpec {
     tab_radius: 4.0,
     border_width: 1.5,
     title_height: 30.0,
+    title_rule: 1.5,
+    title_rule_focus: Some(rgba(186, 98, 0, 255)),
+    tab_indicator: TabIndicator::Bottom,
+    tab_indicator_width: 1.5,
     ..EDITOR_CLASSIC
 };
 
 /// slate_amber on paler, warmer grounds, the amber a shade deeper.
 pub const SLATE_AMBER_LIGHT: ThemeSpec = ThemeSpec {
     name: "slate_amber_light",
+    sidebar_tab_outline: 1.5,
+    sidebar_tab_flat: SideTabFlat::None,
     base: rgba(230, 227, 222, 255),
     accent: rgba(176, 92, 0, 255),
     text: rgba(42, 37, 32, 255),
@@ -814,6 +925,10 @@ pub const SLATE_AMBER_LIGHT: ThemeSpec = ThemeSpec {
     tab_radius: 4.0,
     border_width: 1.5,
     title_height: 30.0,
+    title_rule: 1.5,
+    title_rule_focus: Some(rgba(176, 92, 0, 255)),
+    tab_indicator: TabIndicator::Bottom,
+    tab_indicator_width: 1.5,
     ..EDITOR_CLASSIC
 };
 /// Every curated theme, in Lace's menu order: Basics, Basics Neo, Editor

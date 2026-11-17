@@ -26,9 +26,15 @@ pub fn nth_id(id: &ElementId, part: &str, i: usize) -> ElementId {
 // ---------------------------------------------------------------------------
 
 /// Track size of a switch, px.
-pub const SWITCH_W: f32 = 28.0;
+pub const SWITCH_W: f32 = 36.0;
 /// Track height of a switch, px.
-pub const SWITCH_H: f32 = 16.0;
+pub const SWITCH_H: f32 = 20.0;
+/// Knob diameter, px. Track, knob, inset and travel are all multiples of
+/// 4px, so they stay whole device pixels at 100%, 125% and 150% scale and
+/// the knob cannot snap to one side.
+const KNOB: f32 = 12.0;
+/// Gap between the knob and the track's outer edge, px (border included).
+const KNOB_INSET: f32 = (SWITCH_H - KNOB) / 2.0;
 /// Time the knob takes to slide across, ms.
 const SLIDE_MS: f32 = 110.0;
 
@@ -123,11 +129,14 @@ impl RenderOnce for Switch {
         };
         let eased = 1.0 - (1.0 - pos) * (1.0 - pos);
 
-        let knob = SWITCH_H - 6.0;
-        let travel = SWITCH_W - 2.0 - knob - 4.0;
+        // The knob sits in flow: the track centres it vertically, and its
+        // left margin slides it. Measured from inside the 1px border, so the
+        // inset is the same on all four sides at either end.
+        let travel = SWITCH_W - 2.0 * KNOB_INSET - KNOB;
         let track = div()
-            .relative()
+            .flex()
             .flex_none()
+            .items_center()
             .w(px(SWITCH_W))
             .h(px(SWITCH_H))
             .rounded_full()
@@ -136,10 +145,9 @@ impl RenderOnce for Switch {
             .border_color(hsla(c.line))
             .child(
                 div()
-                    .absolute()
-                    .top(px(2.))
-                    .left(px(2.0 + travel * eased))
-                    .size(px(knob))
+                    .flex_none()
+                    .ml(px(KNOB_INSET - 1.0 + travel * eased))
+                    .size(px(KNOB))
                     .rounded_full()
                     .bg(hsla(c.knob))
                     .border_1()

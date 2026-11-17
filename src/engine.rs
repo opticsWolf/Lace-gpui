@@ -86,6 +86,32 @@ pub enum Rel {
     Dark,
 }
 
+/// Where a dock tab strip marks its active tab with a bar.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TabIndicator {
+    /// No bar: the outline (if any) is the only active-tab marker.
+    #[default]
+    None,
+    /// Along the tab's top edge.
+    Top,
+    /// Along the tab's bottom edge, standing in for the title rule there.
+    Bottom,
+}
+
+/// Which sides of a sidebar tab stay square. Lace's `sidebar_tab_flat_edge`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SideTabFlat {
+    /// Every corner square, the classic look.
+    #[default]
+    All,
+    /// Fully rounded.
+    None,
+    /// Square on the side facing the window edge.
+    Outward,
+    /// Square on the side facing the content.
+    Inward,
+}
+
 /// Title-bar direction relative to the panel.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TitleMode {
@@ -209,6 +235,46 @@ pub struct ThemeSpec {
     pub focus_width: f64,
     /// Title-bar height.
     pub title_height: f64,
+    /// Width of the rule along the bottom of a dock's tab strip or title
+    /// bar; 0 = none. Inactive tabs sit on it, the active tab opens through
+    /// it into its panel. Lace's `title_border_bottom`.
+    pub title_rule: f64,
+    /// The rule's colour while its group holds focus. `None` follows the
+    /// focus border. Lace's `title_border_focus_color`.
+    pub title_rule_focus: Option<Rgba>,
+    /// Width of the left/top/right outline around each dock tab; 0 = none.
+    /// Lace's `tab_border_width`.
+    pub tab_outline: f64,
+    /// Inactive tabs' outline. `None` follows the structural border; a
+    /// transparent colour outlines the active tab alone.
+    pub tab_outline_color: Option<Rgba>,
+    /// The active tab's outline. `None` follows the accent.
+    pub tab_outline_active: Option<Rgba>,
+    /// Where the active tab's accent bar sits. Lace's
+    /// `indicator_position`.
+    pub tab_indicator: TabIndicator,
+    /// Thickness of that bar. Lace's `indicator_width`.
+    pub tab_indicator_width: f64,
+    /// While a group does not hold focus, its active tab's outline and bar
+    /// fade halfway into the tab and its label halfway to the inactive
+    /// colour. Lace's `tab_dimming`; its presets enable it on all but the
+    /// classic editor palettes, so it defaults on here.
+    pub tab_dimming: bool,
+    /// The group's frame starts under the tab strip and continues the
+    /// active tab's outline: its colour in every focus state, the strip's
+    /// rule as its top side. Lace's `border_below_title`.
+    pub border_below_title: bool,
+    /// The active tab's outline while its group is unfocused, replacing the
+    /// dimming. Transparent drops the outline (and, with
+    /// `border_below_title`, the frame) until focus returns. Lace's
+    /// `tab_border_unfocused_color`.
+    pub tab_outline_unfocused: Option<Rgba>,
+    /// Outline width of a sidebar tab; 0 keeps the classic flat rail with a
+    /// 3px indicator, otherwise the indicator takes this width too. Lace's
+    /// `sidebar_tab_border_width`.
+    pub sidebar_tab_outline: f64,
+    /// Lace's `sidebar_tab_flat_edge`.
+    pub sidebar_tab_flat: SideTabFlat,
 }
 
 /// Lace's `ThemeSpec` defaults, one for one — the const twin of `Default`
@@ -249,6 +315,18 @@ impl ThemeSpec {
     outline_strength: 0.22,
     focus_width: 2.0,
     title_height: 30.0,
+    title_rule: 0.0,
+    title_rule_focus: None,
+    tab_outline: 0.0,
+    tab_outline_color: None,
+    tab_outline_active: None,
+    tab_indicator: TabIndicator::None,
+    tab_indicator_width: 2.0,
+    tab_dimming: true,
+    border_below_title: false,
+    tab_outline_unfocused: None,
+    sidebar_tab_outline: 0.0,
+    sidebar_tab_flat: SideTabFlat::All,
     };
 }
 
@@ -402,6 +480,25 @@ pub struct Tokens {
     pub outline_strength: f64,
     pub focus_width: f64,
     pub title_height: f64,
+    /// Tab-strip rule width (0 = none); coloured by `title_border_color`,
+    /// or `title_focus_border` while the group holds focus.
+    pub title_rule: f64,
+    /// Dock-tab outline width (0 = none); coloured by `tab_border_normal`
+    /// and `tab_border_active`.
+    pub tab_outline: f64,
+    /// Active-tab bar position, coloured by `tab_indicator`.
+    pub tab_indicator_pos: TabIndicator,
+    pub tab_indicator_width: f64,
+    /// See [`ThemeSpec::tab_dimming`].
+    pub tab_dimming: bool,
+    /// See [`ThemeSpec::border_below_title`].
+    pub border_below_title: bool,
+    /// See [`ThemeSpec::tab_outline_unfocused`].
+    pub tab_border_unfocused: Option<Rgba>,
+    /// See [`ThemeSpec::sidebar_tab_outline`].
+    pub sidebar_tab_outline: f64,
+    /// See [`ThemeSpec::sidebar_tab_flat`].
+    pub sidebar_tab_flat: SideTabFlat,
 }
 
 impl Tokens {
@@ -733,6 +830,15 @@ pub fn build_unenforced(spec: &ThemeSpec) -> (Tokens, Explicit) {
         outline_strength: spec.outline_strength,
         focus_width: spec.focus_width,
         title_height: spec.title_height,
+        title_rule: spec.title_rule,
+        tab_outline: spec.tab_outline,
+        tab_indicator_pos: spec.tab_indicator,
+        tab_indicator_width: spec.tab_indicator_width,
+        tab_dimming: spec.tab_dimming,
+        border_below_title: spec.border_below_title,
+        tab_border_unfocused: spec.tab_outline_unfocused,
+        sidebar_tab_outline: spec.sidebar_tab_outline,
+        sidebar_tab_flat: spec.sidebar_tab_flat,
     };
     (tokens, explicit)
 }
@@ -758,5 +864,17 @@ fn blend30(fg: Rgba, bg: Rgba) -> Rgba {
 pub fn build(spec: &ThemeSpec) -> Tokens {
     let (mut tokens, explicit) = build_unenforced(spec);
     enforce(&mut tokens, spec, &explicit);
+    // Edge colours are design choices — a transparent outline that leaves
+    // only the active tab drawn, an accent rule — so they land after the
+    // contrast pass, which would otherwise lift them back to the border.
+    if let Some(c) = spec.tab_outline_color {
+        tokens.tab_border_normal = c;
+    }
+    if let Some(c) = spec.tab_outline_active {
+        tokens.tab_border_active = c;
+    }
+    if let Some(c) = spec.title_rule_focus {
+        tokens.title_focus_border = c;
+    }
     tokens
 }

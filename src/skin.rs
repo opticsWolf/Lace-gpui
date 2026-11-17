@@ -355,6 +355,8 @@ pub fn apply_spec_styled(spec: &ThemeSpec, style: WidgetStyle, cx: &mut App) {
             theme.focus_ring = true;
         }
     }
+    crate::edge_tabs::TabEdgeStyle::install(tab_edges(&tokens), cx);
+    crate::sidebar::SidebarStyle::install(sidebar_style(&tokens), cx);
     // Colors were edited through `global_mut`, which does not rebuild the
     // Base projection (the stock scrollbar and resize handles) on its own.
     Theme::sync_base(cx);
@@ -380,6 +382,61 @@ pub fn apply_next_styled(current: &str, style: WidgetStyle, cx: &mut App) -> &'s
     let next = names[ix].name;
     apply_styled(next, style, cx);
     next
+}
+
+/// The dock tab-strip edges a theme asks for: the title rule, tab outlines
+/// and the active-tab bar. All zero for themes that set none, which keeps
+/// the stock strip.
+pub fn tab_edges(t: &Tokens) -> crate::edge_tabs::TabEdgeStyle {
+    crate::edge_tabs::TabEdgeStyle {
+        rule: px(t.title_rule as f32),
+        rule_color: hsla(t.title_border_color),
+        rule_focus: hsla(t.title_focus_border),
+        outline: px(t.tab_outline as f32),
+        outline_color: hsla(t.tab_border_normal),
+        outline_active: hsla(t.tab_border_active),
+        indicator: t.tab_indicator_pos,
+        indicator_width: px(t.tab_indicator_width as f32),
+        indicator_color: hsla(t.tab_indicator),
+        radius: px(t.tab_radius as f32),
+        height: px(t.title_height as f32),
+        dimming: t.tab_dimming,
+        outline_unfocused: t.tab_border_unfocused.map(hsla),
+        below_title: t.border_below_title,
+        frame_focus: hsla(t.focus_border_color),
+        frame_width: px(t.border_width as f32),
+        frame_radius: px(t.corner_radius as f32),
+    }
+}
+
+/// The auto-hide sidebars a theme asks for: Lace's 30px rail, its tabs
+/// (outlined on the edge themes, flat on the classic ones) and the slide-out
+/// panel, which takes the theme's own corner radius and border.
+pub fn sidebar_style(t: &Tokens) -> crate::sidebar::SidebarStyle {
+    let outline = px(t.sidebar_tab_outline as f32);
+    crate::sidebar::SidebarStyle {
+        rail: px(30.),
+        rail_bg: hsla(t.sidebar_bg),
+        tab_bg_active: hsla(t.sidebar_tab_bg_active),
+        tab_bg_hover: hsla(t.sidebar_tab_bg_hover_start),
+        tab_text: hsla(t.sidebar_tab_text_normal),
+        tab_text_active: hsla(t.sidebar_tab_text_active),
+        outline,
+        outline_normal: hsla(t.sidebar_tab_border_normal),
+        outline_active: hsla(t.sidebar_tab_border_active),
+        outline_hover: hsla(t.sidebar_tab_border_hover),
+        flat: t.sidebar_tab_flat,
+        tab_radius: px(t.tab_radius as f32),
+        indicator: hsla(t.sidebar_indicator),
+        indicator_width: if outline > px(0.) { outline } else { px(3.) },
+        panel_bg: hsla(t.sidepanel_bg),
+        panel_border: hsla(t.sidepanel_border),
+        panel_focus: hsla(t.sidepanel_focus_border),
+        panel_border_width: px(t.border_width as f32),
+        panel_radius: px(t.corner_radius as f32),
+        title_text: hsla(t.sidepanel_title_text),
+        title_height: px(30.),
+    }
 }
 
 /// The chassis a theme rides, as gpui-kit's panel chrome: the Basics' 4px
@@ -512,6 +569,80 @@ mod tests {
             PanelStyle::TabBar
         );
         assert_eq!(dock_chrome(by_name("midnight").unwrap()), PanelStyle::Auto);
+    }
+
+    #[test]
+    fn sidebars_follow_the_theme() {
+        use crate::engine::SideTabFlat;
+        let style = |name| sidebar_style(&crate::build(by_name(name).unwrap()));
+
+        // Classic: flat tabs, no outline, Lace's 3px indicator.
+        let classic = style("midnight");
+        assert_eq!(classic.outline, px(0.));
+        assert_eq!(classic.flat, SideTabFlat::All);
+        assert_eq!(classic.indicator_width, px(3.));
+
+        // Edge themes outline every tab, the indicator matching the outline,
+        // and the slide-out panel takes the theme's radius and border.
+        let violet = style("violet_haze");
+        assert_eq!(violet.outline, px(2.));
+        assert_eq!(violet.flat, SideTabFlat::None);
+        assert_eq!(violet.indicator_width, px(2.));
+        assert_eq!(violet.rail, px(30.));
+        assert_eq!(style("neon_dusk").flat, SideTabFlat::Outward);
+        assert_eq!(style("slate_amber").outline, px(1.5));
+    }
+
+    #[test]
+    fn tab_edges_follow_the_theme() {
+        let edges = |name| tab_edges(&crate::build(by_name(name).unwrap()));
+
+        // A theme without edges keeps the stock strip.
+        let plain = edges("midnight");
+        assert!(!plain.draws_tabs() && !plain.has_rule());
+
+        // Outlined: 2px tabs on a 2px rule; the inactive outline survives
+        // the contrast pass as authored.
+        let violet = edges("violet_haze");
+        assert!(violet.draws_tabs() && violet.has_rule());
+        assert_eq!(violet.outline, px(2.));
+        assert_eq!(violet.outline_color, hsla([98, 114, 164, 200]));
+
+        // midnight_haze outlines the active tab alone.
+        let midnight = edges("midnight_haze");
+        assert_eq!(midnight.outline_color.a, 0.0);
+        assert!(midnight.outline_active.a > 0.9);
+
+        // cyberpunk_edge: no outline, a bottom bar and an accent rule on focus.
+        let cyber = edges("cyberpunk_edge");
+        assert_eq!(cyber.outline, px(0.));
+        assert_eq!(cyber.indicator, crate::engine::TabIndicator::Bottom);
+        assert_eq!(cyber.rule_focus, hsla([255, 154, 0, 255]));
+    }
+
+    #[test]
+    fn tab_edges_follow_focus_like_lace() {
+        let edges = |name| tab_edges(&crate::build(by_name(name).unwrap()));
+        let bg = hsla([36, 40, 52, 255]);
+
+        // midnight_haze: the outline, and the frame continuing it, exist
+        // only while the group holds focus.
+        let midnight = edges("midnight_haze");
+        assert!(midnight.below_title);
+        assert_eq!(midnight.active_outline(true, bg), Some(midnight.outline_active));
+        assert_eq!(midnight.active_outline(false, bg), None);
+        assert_eq!(midnight.below_title_frame(false, bg).map(|c| c.a), Some(0.0));
+        assert_eq!(midnight.rule_for(true, bg), midnight.outline_active);
+
+        // violet_haze dims instead: halfway into the tab's fill.
+        let violet = edges("violet_haze");
+        let dim = violet.active_outline(false, bg).unwrap();
+        assert_ne!(dim, violet.outline_active);
+        assert!(dim.a > 0.9);
+
+        // Classic editor palettes keep full strength unfocused.
+        assert!(!edges("dracula").dimming);
+        assert!(edges("slate_amber").dimming && !edges("slate_amber").below_title);
     }
 
     #[test]

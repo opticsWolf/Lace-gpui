@@ -151,8 +151,11 @@ pub fn switch(style: &LaceStyle, s: State) -> Switch {
         } else {
             p::legible(style, s, p::stroke(style, s, track), style.border_ratio(), None)
         };
-        let knob = pal.button;
-        Switch { track, line, knob, knob_line: p::legible(style, s, p::stroke(style, s, knob), style.ui_ratio(), Some(track)) }
+        // A solid disc in the indicator outline tone (Lace's `_outline`,
+        // lifted to `ui_ratio` against the track). A pale knob inside a
+        // ring read a size smaller than the solid knob of the on state.
+        let knob = p::legible(style, s, p::stroke(style, s, pal.button), style.ui_ratio(), Some(track));
+        Switch { track, line, knob, knob_line: knob }
     }
 }
 

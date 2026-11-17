@@ -30,8 +30,11 @@ use std::sync::Arc;
 
 use gpui_kit::base::dock::PanelView as BasePanelView;
 use gpui_kit::component::button::{Button, ButtonVariants};
+use gpui_kit::component::Icon;
+use lace_gpui::dock_icons::tab_label;
+use lace_gpui::sidebar::Sidebars;
 use gpui_kit::component::dock::{
-    BasePanel, DockArea, DockLayout, DockPlacement, Panel, PanelEvent, PanelHandle, PanelId,
+    BasePanel, DockLayout, DockPlacement, Panel, PanelEvent, PanelHandle, PanelId,
 };
 use gpui_kit::component::resizable::{h_resizable, resizable_panel, v_resizable};
 use gpui_kit::component::theme::ActiveTheme;
@@ -48,6 +51,29 @@ struct InfoPanel {
     label: &'static str,
     body: SharedString,
     focus_handle: FocusHandle,
+}
+
+/// A Lucide icon from gpui-kit's bundled assets, by file name.
+fn lucide(name: &str) -> Icon {
+    Icon::empty().path(format!("icons/{name}.svg"))
+}
+
+/// The tab icon for each demo panel, as Lace gives every dock panel one.
+fn panel_icon(label: &str) -> &'static str {
+    match label {
+        "Files" => "folder",
+        "Search" => "search",
+        "Editor" => "file-code",
+        "Preview" => "eye",
+        "Outline" => "list-tree",
+        "Symbols" => "hash",
+        "Properties" => "settings-2",
+        "History" => "history",
+        "Logs" => "file-text",
+        "Problems" => "triangle-alert",
+        "Terminal" => "square-terminal",
+        _ => "file",
+    }
 }
 
 impl InfoPanel {
@@ -78,7 +104,7 @@ impl Panel for InfoPanel {
     fn title(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .text_color(cx.theme().colors.foreground)
-            .child(self.label)
+            .child(tab_label(Some(lucide(panel_icon(self.label))), self.label))
     }
 }
 
@@ -130,7 +156,7 @@ impl Panel for SplitLabPanel {
     fn title(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .text_color(cx.theme().colors.foreground)
-            .child("Split lab")
+            .child(tab_label(Some(lucide("layout-dashboard")), "Split lab"))
     }
 }
 
@@ -248,7 +274,8 @@ impl Preset {
 }
 
 struct DockGeometryDemo {
-    area: Entity<DockArea>,
+    /// The dock with its sidebars; it owns the `DockArea`.
+    sidebars: Entity<Sidebars>,
     skin: std::rc::Rc<GeometryDockSkin>,
     split_lab: Entity<SplitLabPanel>,
     split_lab_shadow: bool,
@@ -265,6 +292,8 @@ impl DockGeometryDemo {
         let preset = Preset::Flagship;
         let (area, skin) =
             GeometryDockSkin::dock_area("lace-dock-geometry", None, preset.style(cx), window, cx);
+        // Lace boxes a close button on the active tab.
+        skin.set_close_button_visible(true, cx);
 
         let files = cx.new(|cx| {
             InfoPanel::new(
@@ -345,6 +374,20 @@ impl DockGeometryDemo {
             )
         });
 
+        let info_panels = [
+            (files.clone(), "Files"),
+            (search.clone(), "Search"),
+            (editor.clone(), "Editor"),
+            (preview.clone(), "Preview"),
+            (outline.clone(), "Outline"),
+            (symbols.clone(), "Symbols"),
+            (properties.clone(), "Properties"),
+            (history.clone(), "History"),
+            (logs.clone(), "Logs"),
+            (problems.clone(), "Problems"),
+            (terminal.clone(), "Terminal"),
+        ];
+
         let navigator = DockLayout::tabs()
             .panel_view(panel_view(files), cx)
             .panel_view(panel_view(search), cx)
@@ -381,13 +424,31 @@ impl DockGeometryDemo {
             area.set_dock_size(DockPlacement::Bottom, px(150.), window, cx);
         });
 
+        // Every panel can go to a sidebar from its title bar's pin button;
+        // three start there, one per edge.
+        let sidebars = cx.new(|cx| {
+            let mut sidebars = Sidebars::new(area.clone(), &skin, cx);
+            for (entity, label) in &info_panels {
+                sidebars.pinnable(entity, Some(lucide(panel_icon(label))));
+            }
+            sidebars.pinnable(&split_lab, Some(lucide("layout-dashboard")));
+            sidebars
+        });
+        sidebars.update(cx, |sidebars, cx| {
+            for (entity, label) in &info_panels {
+                if matches!(*label, "Symbols" | "History" | "Terminal") {
+                    sidebars.pin(PanelId::from(entity.entity_id()), None, window, cx);
+                }
+            }
+        });
+
         Self {
-            area,
+            sidebars,
             skin,
             split_lab,
             split_lab_shadow: false,
             preset,
-            theme_name: "midnight".into(),
+            theme_name: start_theme().into(),
         }
     }
 
@@ -506,15 +567,28 @@ impl Render for DockGeometryDemo {
                     .flex_1()
                     .min_h_0()
                     .overflow_hidden()
-                    .child(self.area.clone()),
+                    .child(self.sidebars.clone()),
             )
     }
 }
 
+/// The theme named on the command line, or midnight.
+fn start_theme() -> String {
+    std::env::args()
+        .nth(1)
+        .filter(|name| lace_gpui::by_name(name).is_some())
+        .unwrap_or_else(|| "midnight".into())
+}
+
 fn main() {
-    gpui_kit::application().run(|cx: &mut App| {
+    // The icon set: without it the tab close, collapse and menu buttons
+    // render as blank squares.
+    gpui_kit::application().with_assets(gpui_kit::assets::AllAssets).run(|cx: &mut App| {
         gpui_kit::init(cx);
-        skin::apply("midnight", cx);
+        // `cargo run --example dock_geometry -- violet_haze` opens on a theme.
+        if !skin::apply(&start_theme(), cx) {
+            skin::apply("midnight", cx);
+        }
 
         let bounds = Bounds::centered(None, size(px(1360.0), px(900.0)), cx);
         let options = WindowOptions {

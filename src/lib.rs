@@ -57,6 +57,13 @@ pub mod skin;
 #[cfg(feature = "gpui-kit")]
 pub mod geometry;
 
+#[cfg(feature = "gpui-kit")]
+pub mod edge_tabs;
+#[cfg(feature = "gpui-kit")]
+pub mod dock_icons;
+#[cfg(feature = "gpui-kit")]
+pub mod sidebar;
+
 /// The Lace release this crate was ported from.
 pub const LACE_VERSION: &str = "0.9.7";
 

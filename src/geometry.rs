@@ -52,7 +52,13 @@
 //! [`gpui-kit-geometric-dock-styling-spec.md`]: ../../gpui-kit-geometric-dock-styling-spec.md
 //! [`docs/gpui-kit-0.8-feasibility.md`]: ../../docs/gpui-kit-0.8-feasibility.md
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    collections::HashMap,
+    rc::Rc,
+};
+
+use crate::edge_tabs::{self, EdgeTabBar, PinTarget, StripOptions, TabEdgeStyle};
 
 use gpui_kit::base::{
     dock::{
@@ -61,7 +67,9 @@ use gpui_kit::base::{
     },
     ResizeHandleContext, ResizeHandleRenderer, ResizeHandleState,
 };
-use gpui_kit::component::dock::{BasePanelView, ClosePanel, DockSkin, PanelHandle, ToggleZoom};
+use gpui_kit::component::dock::{
+    BasePanelView, ClosePanel, DockSkin, PanelHandle, PanelStyle, ToggleZoom,
+};
 use gpui_kit::component::theme::ActiveTheme;
 use gpui_kit::gpui::{
     deferred, div, point, prelude::FluentBuilder as _, px, relative, AnyElement, App,
@@ -202,7 +210,8 @@ impl OutlineStyle {
         }
     }
 
-    /// A ring in the active theme's border colour.
+    /// A ring in the active theme's border colour and Lace border width
+    /// (`CORE.border_width`); `width` is the fallback for a theme without one.
     pub fn themed(width: Pixels) -> Self {
         Self { color: None, width }
     }
@@ -516,7 +525,15 @@ pub struct GeometryDockSkin {
     // them through the normal invalidation path.
     style: Rc<RefCell<DockGeometryStyle>>,
     panel_effects: Rc<RefCell<HashMap<PanelId, PanelEffect>>>,
+    // The stock skin keeps this write-only, so Lace's tab strip needs its own
+    // copy to know whether to draw close buttons.
+    close_visible: Rc<Cell<bool>>,
+    // Where the strip's pin button sends a panel; set by `Sidebars`.
+    pin: PinSlot,
 }
+
+/// The installed pin target, shared with every group's strip.
+type PinSlot = Rc<RefCell<Option<Rc<dyn PinTarget>>>>;
 
 impl GeometryDockSkin {
     /// Build the skin with the default (stock) appearance.
@@ -541,7 +558,31 @@ impl GeometryDockSkin {
             area: cx.weak_entity(),
             style: Rc::new(RefCell::new(style)),
             panel_effects: Rc::new(RefCell::new(HashMap::new())),
+            close_visible: Rc::new(Cell::new(false)),
+            pin: Rc::new(RefCell::new(None)),
         })
+    }
+
+    /// Install (or with `None` remove) where the title bar's pin button
+    /// sends a panel. [`crate::sidebar::Sidebars`] calls this itself.
+    pub fn set_pin_target(&self, target: Option<Rc<dyn PinTarget>>, cx: &mut App) {
+        *self.pin.borrow_mut() = target;
+        if let Some(area) = self.area.upgrade() {
+            area.update(cx, |_, cx| cx.notify());
+        }
+    }
+
+    /// The stock skin underneath, for its own settings (panel style, dock
+    /// collapse affordances).
+    pub fn dock_skin(&self) -> &Rc<DockSkin> {
+        &self.inner
+    }
+
+    /// Show close buttons on closable tabs, in the stock strip and in
+    /// Lace's edge strip alike. Hidden by default.
+    pub fn set_close_button_visible(&self, visible: bool, cx: &mut App) {
+        self.close_visible.set(visible);
+        self.inner.set_close_button_visible(visible, cx);
     }
 
     /// Build a [`DockArea`] and its styling handle in one call, mirroring
@@ -747,6 +788,10 @@ impl DockAreaRenderer for GeometryDockSkin {
     fn tab_group_renderer(&self) -> Rc<dyn TabGroupRenderer> {
         Rc::new(GeometryTabGroup {
             inner: self.inner_group.clone(),
+            dock: self.inner.clone(),
+            strip: EdgeTabBar::default(),
+            close_visible: self.close_visible.clone(),
+            pin: self.pin.clone(),
             area: self.area.clone(),
             style: self.style.clone(),
             panel_effects: self.panel_effects.clone(),
@@ -758,6 +803,10 @@ impl DockAreaRenderer for GeometryDockSkin {
 /// changed after construction is seen by the next frame.
 struct GeometryTabGroup {
     inner: Rc<dyn TabGroupRenderer>,
+    dock: Rc<DockSkin>,
+    strip: EdgeTabBar,
+    close_visible: Rc<Cell<bool>>,
+    pin: PinSlot,
     area: WeakEntity<DockArea>,
     style: Rc<RefCell<DockGeometryStyle>>,
     panel_effects: Rc<RefCell<HashMap<PanelId, PanelEffect>>>,
@@ -795,9 +844,29 @@ impl GeometryTabGroup {
 }
 
 impl TabGroupRenderer for GeometryTabGroup {
-    fn frame(&self, group: &TabGroupContext, _: &mut Window, cx: &mut App) -> Stateful<Div> {
+    fn frame(&self, group: &TabGroupContext, window: &mut Window, cx: &mut App) -> Stateful<Div> {
         let style = *self.style.borrow();
-        let outline = style.panel.outline;
+        let edges = TabEdgeStyle::current(cx);
+        let focused = edge_tabs::group_focused(group, window, cx);
+        // Under `below_title` the content frame draws the outline instead,
+        // starting under the strip. Otherwise the focused group's outline
+        // takes the focus colour, as Lace's `paint_panel_border` does.
+        let outline = if edges
+            .below_title_frame(focused, cx.theme().tab_active)
+            .is_some()
+        {
+            None
+        } else {
+            style.panel.outline.map(|mut outline| {
+                if outline.color.is_none() && edges.frame_width > px(0.) {
+                    outline.width = edges.frame_width;
+                }
+                if focused && edges.frame_focus.a > 0. {
+                    outline.color = Some(edges.frame_focus);
+                }
+                outline
+            })
+        };
         let effect = self.effect_for(group, cx);
         let sides = self.sides_for(group.node(), cx);
 
@@ -860,7 +929,20 @@ impl TabGroupRenderer for GeometryTabGroup {
         window: &mut Window,
         cx: &mut App,
     ) -> Stateful<Div> {
-        self.inner.content_frame(group, window, cx)
+        let edges = TabEdgeStyle::current(cx);
+        let focused = edge_tabs::group_focused(group, window, cx);
+        let frame = edges.below_title_frame(focused, cx.theme().tab_active);
+        let content = self.inner.content_frame(group, window, cx);
+        // Left, right and bottom: the strip's rule is the fourth side.
+        match frame {
+            Some(color) if !group.is_collapsed() => content
+                .border_l(edges.frame_width)
+                .border_r(edges.frame_width)
+                .border_b(edges.frame_width)
+                .border_color(color)
+                .rounded_b(edges.frame_radius),
+            _ => content,
+        }
     }
 
     fn render_tab_bar(
@@ -869,7 +951,64 @@ impl TabGroupRenderer for GeometryTabGroup {
         window: &mut Window,
         cx: &mut App,
     ) -> AnyElement {
-        self.inner.render_tab_bar(group, window, cx)
+        let edges = TabEdgeStyle::current(cx);
+        // The pin button lives in Lace's strip, so installed sidebars take
+        // every theme onto it, the classic flat ones included.
+        let pin = self.pin.borrow().clone();
+        let lace_strip = pin.is_some();
+        if !edges.draws_tabs() && !edges.has_rule() && !lace_strip {
+            return self.inner.render_tab_bar(group, window, cx);
+        }
+
+        let visible: Vec<usize> = group
+            .panels()
+            .iter()
+            .enumerate()
+            .filter(|(_, panel)| panel.visible(cx))
+            .map(|(ix, _)| ix)
+            .collect();
+        // The cases the stock skin draws as a plain title (or nothing): keep
+        // them, and lay the rule under a title that is actually drawn.
+        let title_only = match visible.as_slice() {
+            [] => return self.inner.render_tab_bar(group, window, cx),
+            [ix] if self.dock.panel_style() == PanelStyle::Auto => {
+                let panel = &group.panels()[*ix];
+                if PanelHandle::of(panel).is_some_and(|handle| !handle.title_bar(cx)) {
+                    return self.inner.render_tab_bar(group, window, cx);
+                }
+                !lace_strip
+            }
+            _ => false,
+        };
+
+        if title_only || (!edges.draws_tabs() && !lace_strip) {
+            let focused = edge_tabs::group_focused(group, window, cx);
+            let color = edges.rule_for(focused, cx.theme().tab_active);
+            let stock = self.inner.render_tab_bar(group, window, cx);
+            return div()
+                .relative()
+                .flex()
+                .flex_col()
+                .flex_none()
+                .child(stock)
+                .when(edges.has_rule(), |this| {
+                    this.child(edge_tabs::rule_line(edges.rule, color))
+                })
+                .into_any_element();
+        }
+
+        self.strip.render(
+            group,
+            edges,
+            StripOptions {
+                area: &self.area,
+                toggles_visible: self.dock.is_toggle_button_visible(),
+                close_visible: self.close_visible.get(),
+                pin,
+            },
+            window,
+            cx,
+        )
     }
 
     fn render_active_panel(
