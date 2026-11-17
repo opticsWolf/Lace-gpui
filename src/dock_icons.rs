@@ -71,7 +71,8 @@ impl From<DockIcon> for Icon {
 /// A tab label with Lace's leading icon: `icon` at 16px, 6px before the text.
 ///
 /// gpui-kit panels have no icon of their own, so a panel that wants one
-/// returns this from its `Panel::title`.
+/// returns this from its `Panel::title`. The text may shrink, so a cramped
+/// tab elides it after the icon.
 pub fn tab_label(icon: Option<Icon>, label: impl IntoElement) -> impl IntoElement {
     div()
         .flex()
@@ -79,7 +80,7 @@ pub fn tab_label(icon: Option<Icon>, label: impl IntoElement) -> impl IntoElemen
         .items_center()
         .gap(px(6.))
         .when_some(icon, |this, icon| this.child(icon.size(px(16.)).flex_none()))
-        .child(label)
+        .child(div().flex_shrink(1.).min_w_0().overflow_hidden().child(label))
 }
 
 #[cfg(test)]

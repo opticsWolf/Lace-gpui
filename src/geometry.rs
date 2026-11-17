@@ -1186,6 +1186,25 @@ impl TabGroupRenderer for GeometryTabGroup {
                 .into_any_element();
         }
 
+        // The frame's inner radius: its corner less the outline it draws
+        // (none under `below_title`, where the content frame takes it).
+        let corner = {
+            let style = self.style.borrow();
+            let focused = edge_tabs::group_focused(group, window, cx);
+            let below_title = edges
+                .below_title_frame(focused, cx.theme().tab_active)
+                .is_some();
+            let border = match style.panel.outline {
+                Some(_) if below_title => px(0.),
+                Some(outline) if outline.color.is_none() && edges.frame_width > px(0.) => {
+                    edges.frame_width
+                }
+                Some(outline) => outline.width,
+                None => px(0.),
+            };
+            (style.panel.corner_radius - border).max(px(0.))
+        };
+
         self.strip.render(
             group,
             edges,
@@ -1194,6 +1213,7 @@ impl TabGroupRenderer for GeometryTabGroup {
                 toggles_visible: self.dock.is_toggle_button_visible(),
                 close_visible: self.close_visible.get(),
                 pin,
+                corner,
             },
             window,
             cx,

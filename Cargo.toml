@@ -43,5 +43,9 @@ required-features = ["gpui-kit"]
 name = "dock_geometry"
 required-features = ["gpui-kit"]
 
+[[example]]
+name = "lace_workbench"
+required-features = ["gpui-kit"]
+
 [profile.release]
 opt-level = 2

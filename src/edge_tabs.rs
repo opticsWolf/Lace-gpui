@@ -27,11 +27,11 @@ use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::dock::{BasePanelView, ClosePanel, PanelHandle, ToggleZoom};
 use gpui_kit::component::menu::DropdownMenu as _;
 use gpui_kit::component::theme::ActiveTheme as _;
-use gpui_kit::component::{IconName, Sizable as _};
+use gpui_kit::component::{Disableable as _, IconName, Sizable as _};
 use gpui_kit::gpui::{
-    div, prelude::FluentBuilder as _, px, size, transparent_black, AnyElement, App,
-    AppContext as _, Anchor, Context, Global, Hsla, InteractiveElement as _, IntoElement,
-    ParentElement as _, Pixels, Point, Render, ScrollHandle, SharedString,
+    canvas, div, point, prelude::FluentBuilder as _, px, size, transparent_black, AnyElement, App,
+    AppContext as _, Anchor, Bounds, Context, Global, Hsla, InteractiveElement as _, IntoElement,
+    ParentElement as _, Pixels, Point, Render, ScrollHandle, SharedString, TextRun,
     StatefulInteractiveElement as _, Styled as _, WeakEntity, Window,
 };
 
@@ -202,6 +202,41 @@ pub(crate) const TITLE_BUTTON: Pixels = px(22.);
 pub(crate) const TITLE_BUTTON_GAP: Pixels = px(8.);
 /// The tab close box: Lace's 17px with its 14px icon.
 const TAB_CLOSE_BUTTON: Pixels = px(18.);
+/// The ‹ › pair's share of the strip: its 4px lead, two title buttons and
+/// the 2px between them.
+const TAB_ARROWS_WIDTH: Pixels = px(4. + 22. + 2. + 22.);
+/// A title may shrink to this multiple of its elided stub (two characters
+/// and an ellipsis), Lace's `CRAMPED_FACTOR`; a lone tab, with nowhere to
+/// scroll to, goes down to the stub itself.
+const CRAMPED_FACTOR: f32 = 2.0;
+/// Room for the leading icon of a Lace [`tab_label`](crate::dock_icons::tab_label)
+/// (16px and the 6px gap), kept by titles that come as elements.
+const TAB_ICON_ROOM: Pixels = px(16. + 6.);
+
+/// How wide `text` sets in the strip's tab font (`text_sm`).
+fn tab_text_width(text: SharedString, window: &Window) -> Pixels {
+    let style = window.text_style();
+    let run = TextRun {
+        len: text.len(),
+        font: style.font(),
+        color: style.color,
+        background_color: None,
+        underline: None,
+        strikethrough: None,
+    };
+    let size = window.rem_size() * 0.875;
+    window.text_system().shape_line(text, size, &[run], None).width
+}
+
+/// The narrowest a tab's title may get, as Lace's cramped minimum: `factor`
+/// times the width at which the label starts to elide, but never wider than
+/// the whole label.
+fn title_minimum(label: &str, icon: Pixels, factor: f32, window: &Window) -> Pixels {
+    let stub: String = label.chars().take(2).chain(['…']).collect();
+    let full = tab_text_width(SharedString::from(label.to_string()), window);
+    let stub = tab_text_width(stub.into(), window);
+    icon + full.min(stub * factor)
+}
 
 /// A ghost icon button with Lace's 3px hover rounding.
 pub(crate) fn chrome_button(id: impl Into<gpui_kit::gpui::ElementId>, icon: DockIcon, size: Pixels) -> Button {
@@ -297,6 +332,111 @@ fn right_top_group(node: &PaneNode) -> Option<NodeId> {
 pub(crate) struct EdgeTabBar {
     scroll: ScrollHandle,
     last_active: Rc<Cell<Option<usize>>>,
+    /// The overflow state the last render drew its arrows for.
+    overflow: Cell<TabOverflow>,
+}
+
+/// Whether a strip's tabs overflow, and which ways they can scroll: Lace's
+/// ‹ › arrows show only while the tabs overflow and there is more than one
+/// (a lone tab has nowhere to scroll to), each enabled while its side hides
+/// a tab.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct TabOverflow {
+    pub shown: bool,
+    pub left: bool,
+    pub right: bool,
+}
+
+impl TabOverflow {
+    /// From how far the tabs overflow their row (`excess`), whether the
+    /// arrows are up already, and whether a click either way would move.
+    ///
+    /// The tabs elide down to their cramped minimums before they overflow,
+    /// so `excess` is only ever above zero once they can shrink no more. The
+    /// arrows take their own width from the row, so once up they stay only
+    /// while the tabs would still overflow without them: they go as soon as
+    /// the tabs fit again, not once they fit beside the arrows.
+    pub fn from_excess(tabs: usize, excess: Pixels, was_shown: bool, back: bool, forward: bool) -> Self {
+        let slack = px(0.5);
+        let room = if was_shown { TAB_ARROWS_WIDTH } else { px(0.) };
+        let shown = tabs > 1 && excess > room + slack;
+        Self {
+            shown,
+            left: shown && back,
+            right: shown && forward,
+        }
+    }
+
+    /// From the tab row's scroll handle, as its last layout left it.
+    ///
+    /// Each arrow is enabled while a click on it would move the row: back
+    /// while the row is scrolled at all, forward until the last tab sits
+    /// where the forward arrow puts it. That end is the last tab, not the
+    /// scroll extent.
+    fn of(scroll: &ScrollHandle, tabs: usize, was_shown: bool) -> Self {
+        let slack = px(0.5);
+        let offset = scroll.offset().x;
+        let end = tabs
+            .checked_sub(1)
+            .and_then(|ix| scroll.bounds_for_item(ix))
+            .map(|b| reveal_offset(scroll, b, false));
+        Self::from_excess(
+            tabs,
+            scroll.max_offset().x,
+            was_shown,
+            offset < -slack,
+            end.is_some_and(|end| offset > end + slack),
+        )
+    }
+}
+
+/// The row offset that brings a tab in from the left (`back`) or right.
+/// Child bounds are laid out unscrolled; the offset moves them. The tab
+/// aligns to the side it comes in from; one wider than the row aligns
+/// left, as in Lace.
+fn reveal_offset(scroll: &ScrollHandle, tab: Bounds<Pixels>, back: bool) -> Pixels {
+    let view = scroll.bounds();
+    let x = if back || tab.size.width >= view.size.width {
+        view.left() - tab.left()
+    } else {
+        view.right() - tab.right()
+    };
+    x.max(-scroll.max_offset().x).min(px(0.))
+}
+
+/// Reveal the next tab hidden to the left (`back`) or right, as Lace's
+/// arrows do; with none left on that side, scroll to the end.
+fn scroll_tabs(scroll: &ScrollHandle, tabs: usize, back: bool) {
+    let offset = scroll.offset();
+    let view = scroll.bounds();
+    let slack = px(0.5);
+    // As in Lace, the target is a tab wholly out of view: a partly clipped
+    // one may be wider than the row, and scrolling to it would not move.
+    let target = if back {
+        (0..tabs).rev().find(|&ix| {
+            scroll
+                .bounds_for_item(ix)
+                .is_some_and(|b| b.right() + offset.x <= view.left() + slack)
+        })
+    } else {
+        (0..tabs).find(|&ix| {
+            scroll
+                .bounds_for_item(ix)
+                .is_some_and(|b| b.left() + offset.x >= view.right() - slack)
+        })
+    };
+    // With none hidden on that side, scroll to that end: the start, or the
+    // last tab (not past it into the drop zone). The offset is set here
+    // rather than through `scroll_to_item`, so the arrows drawn next
+    // already see it.
+    let x = match target.or(if back { None } else { tabs.checked_sub(1) }) {
+        Some(ix) => match scroll.bounds_for_item(ix) {
+            Some(tab) => reveal_offset(scroll, tab, back),
+            None => return,
+        },
+        None => px(0.),
+    };
+    scroll.set_offset(point(x, offset.y));
 }
 
 /// Settings the dock skin owns and the strip reads.
@@ -305,6 +445,9 @@ pub(crate) struct StripOptions<'a> {
     pub toggles_visible: bool,
     pub close_visible: bool,
     pub pin: Option<Rc<dyn PinTarget>>,
+    /// The group frame's inner corner radius. gpui clips children to a
+    /// rectangle, so the strip rounds its own top corners to stay inside.
+    pub corner: Pixels,
 }
 
 /// Where the title bar's pin button sends a panel: Lace's auto-hide
@@ -537,6 +680,21 @@ impl EdgeTabBar {
         // Outlined tabs stand clear of the strip's top edge.
         let top_gap = if outlined { px(3.) } else { px(0.) };
         let bar = edges.indicator_width.max(px(1.));
+        let corner = opts.corner.max(px(0.));
+        // A tab sitting in the frame's top-left corner follows its curve.
+        let flush_left = left.is_none()
+            && bottom.is_none()
+            && (!outlined || edges.below_title)
+            && corner > edges.radius;
+        let first_visible = visible.first().copied();
+        let tab_n = visible.len();
+        let overflow = TabOverflow::of(&self.scroll, tab_n, self.overflow.get().shown);
+        // Lace tabs elide before the row scrolls: each may shrink to its
+        // cramped minimum, a lone one down to its stub.
+        let factor = if tab_n > 1 { CRAMPED_FACTOR } else { 1. };
+        let tab_pad = window.rem_size() * 0.75; // px_3
+        let tab_gap = window.rem_size() * 0.25; // gap_1
+        self.overflow.set(overflow);
 
         let mut tabs: Vec<AnyElement> = Vec::with_capacity(visible.len() + 1);
         for ix in visible {
@@ -550,13 +708,30 @@ impl EdgeTabBar {
             let close = !collapsed
                 && opts.close_visible
                 && group.is_panel_closable(panel.panel_id(cx), cx);
+            let with_close = close && selected;
+
+            // The cramped minimum follows the label text: the tab name, or
+            // else the panel name, which a title element is taken to show
+            // after a Lace tab icon.
+            let handle = PanelHandle::of(&panel);
+            let tab_name = handle.as_ref().and_then(|handle| handle.tab_name(cx));
+            let icon = if handle.is_some() && tab_name.is_none() { TAB_ICON_ROOM } else { px(0.) };
+            let label = tab_name.unwrap_or_else(|| SharedString::from(panel.panel_name(cx).to_string()));
+            let title_min = title_minimum(&label, icon, factor, window);
+            // The tab keeps its padding, outline and close box whole; only
+            // the title gives.
+            let tab_min = tab_pad * 2.
+                + if outlined { outline * 2. } else { px(0.) }
+                + title_min
+                + if with_close { tab_gap + TAB_CLOSE_BUTTON } else { px(0.) };
 
             let tab = div()
                 .id(("lace-edge-tab", ix))
                 .relative()
                 .flex()
                 .flex_row()
-                .flex_shrink_0()
+                .flex_shrink(1.)
+                .min_w(tab_min)
                 .items_center()
                 .gap_1()
                 .px_3()
@@ -591,6 +766,9 @@ impl EdgeTabBar {
                 .when(!outlined && edges.radius > px(0.), |this| {
                     this.rounded_t(edges.radius)
                 })
+                .when(flush_left && Some(ix) == first_visible, |this| {
+                    this.rounded_tl(corner)
+                })
                 .when(selected && edges.indicator == TabIndicator::Top, |this| {
                     this.child(
                         div()
@@ -613,9 +791,17 @@ impl EdgeTabBar {
                             .bg(indicator_color),
                     )
                 })
-                .child(div().flex_shrink_0().child(title))
+                // The title elides (`…`) as the tab shrinks.
+                .child(
+                    div()
+                        .flex_shrink(1.)
+                        .min_w(title_min)
+                        .overflow_hidden()
+                        .text_ellipsis()
+                        .child(title),
+                )
                 // Lace boxes the ✕ and shows it on the active tab only.
-                .when(close && selected, |this| {
+                .when(with_close, |this| {
                     let group = group.clone();
                     let id = panel.panel_id(cx);
                     this.child(
@@ -682,12 +868,15 @@ impl EdgeTabBar {
         }
 
         // Empty space past the last tab, so a panel can be dropped there.
+        // Like Lace's trailing stretch it has no width of its own: it fills
+        // what the tabs leave and is gone once they overflow, so the row
+        // never scrolls past its last tab.
         tabs.push(
             div()
                 .id("lace-edge-empty")
                 .h_full()
                 .flex_grow(1.)
-                .min_w_16()
+                .min_w_0()
                 .when(droppable, |this| {
                     this.drag_over::<DragPanel>(move |this, _, _, _| this.bg(drop_target))
                         .on_drop({
@@ -708,6 +897,30 @@ impl EdgeTabBar {
                 })
                 .into_any_element(),
         );
+
+        // Lace's ‹ › tab scroll arrows, after the tabs and before the
+        // title-bar buttons.
+        let arrows = overflow.shown.then(|| {
+            let arrow = |id: &'static str, icon: DockIcon, tip: &'static str, enabled: bool, back: bool| {
+                let scroll = self.scroll.clone();
+                chrome_button(id, icon, TITLE_BUTTON)
+                    .disabled(!enabled)
+                    .tooltip(tip)
+                    .on_click(move |_, window, _| {
+                        scroll_tabs(&scroll, tab_n, back);
+                        window.refresh();
+                    })
+            };
+            div()
+                .flex()
+                .flex_none()
+                .items_center()
+                .gap(px(2.))
+                .pl(px(4.))
+                .h(edges.height - rule)
+                .child(arrow("lace-tab-scroll-left", DockIcon::ChevronLeft, "Scroll tabs left", overflow.left, true))
+                .child(arrow("lace-tab-scroll-right", DockIcon::ChevronRight, "Scroll tabs right", overflow.right, false))
+        });
 
         let leading = left.is_some() || bottom.is_some();
         let trailing = (!collapsed).then(|| {
@@ -738,6 +951,7 @@ impl EdgeTabBar {
             .w_full()
             .h(edges.height)
             .bg(strip_bg)
+            .when(corner > px(0.), |this| this.rounded_t(corner))
             // First, so tabs paint over it: the active one hides it.
             .when(rule > px(0.), |this| this.child(rule_line(rule, rule_color)))
             .when(leading, |this| {
@@ -772,7 +986,54 @@ impl EdgeTabBar {
                     .track_scroll(&self.scroll)
                     .children(tabs),
             )
+            .children(arrows)
             .children(trailing)
+            // The wheel over the tab row scrolls it through gpui's own
+            // handler (a vertical wheel turns into horizontal scrolling).
+            // The arrows follow the last layout. When this frame's layout
+            // changes what they should be (a resize, a tab added or
+            // removed), draw once more.
+            .child({
+                let scroll = self.scroll.clone();
+                canvas(
+                    move |_, window, _| {
+                        if TabOverflow::of(&scroll, tab_n, overflow.shown) != overflow {
+                            window.on_next_frame(|window, _| window.refresh());
+                        }
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_0()
+            })
             .into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TabOverflow;
+    use gpui_kit::gpui::px;
+
+    #[test]
+    fn arrows_follow_lace_overflow_rules() {
+        // Tabs that fit: no arrows.
+        assert!(!TabOverflow::from_excess(3, px(0.), false, false, false).shown);
+        // A lone tab never scrolls, however narrow the strip.
+        assert!(!TabOverflow::from_excess(1, px(80.), false, false, true).shown);
+        // The first pixel of overflow brings the arrows up.
+        assert!(TabOverflow::from_excess(3, px(1.), false, false, true).shown);
+        // At the start only the right arrow works, at the end only the left.
+        let start = TabOverflow::from_excess(3, px(80.), false, false, true);
+        assert_eq!((start.shown, start.left, start.right), (true, false, true));
+        let end = TabOverflow::from_excess(3, px(80.), true, true, false);
+        assert_eq!((end.left, end.right), (true, false));
+        let middle = TabOverflow::from_excess(3, px(80.), true, true, true);
+        assert_eq!((middle.left, middle.right), (true, true));
+        // Once up, the arrows go as soon as the tabs would fit without them,
+        // not only once they fit beside them.
+        let fits_without = super::TAB_ARROWS_WIDTH - px(1.);
+        assert!(!TabOverflow::from_excess(3, fits_without, true, true, false).shown);
+        assert!(TabOverflow::from_excess(3, fits_without, false, true, false).shown);
     }
 }
