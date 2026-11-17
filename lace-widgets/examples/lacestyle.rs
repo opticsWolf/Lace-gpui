@@ -21,8 +21,8 @@ use lace_widgets::views::{Column, Delegate, ItemModel, ItemView, Mode, Selection
 #[path = "lacestyle_parts/kit.rs"]
 mod kit;
 
-/// Every Lace preset: Basics, Basics Neo, Editor Classics, Neon.
-const THEMES: [&lace_gpui::engine::ThemeSpec; 25] = lace_gpui::themes::ALL;
+/// Every Lace preset: Basics, Basics Neo, Editor Classics, Neon, Edge Treatments.
+const THEMES: &[&lace_gpui::engine::ThemeSpec] = &lace_gpui::themes::ALL;
 const PAGES: [&str; 5] = ["Gallery", "Widgets", "Views", "Splitters", "Kit"];
 
 const LABEL_W: f32 = 120.0;
