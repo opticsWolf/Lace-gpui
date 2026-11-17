@@ -106,8 +106,8 @@ impl DockGeometryStyle {
         self
     }
 
-    /// Colour behind every gap. `None` keeps the theme's tab-bar token, which
-    /// is what the stock skin paints.
+    /// Colour behind every gap. `None` takes the window background (Lace's
+    /// `canvas_bg`), which is what Lace paints behind its splitters.
     pub fn gap_background(mut self, color: Hsla) -> Self {
         self.gap.background = Some(color);
         self
@@ -654,7 +654,7 @@ impl DockAreaRenderer for GeometryDockSkin {
             .p(style.gap.outer);
         match style.gap.background {
             Some(color) => frame.bg(color),
-            None => frame.bg(cx.theme().tokens.tab_bar),
+            None => frame.bg(cx.theme().tokens.background),
         }
     }
 
@@ -669,7 +669,7 @@ impl DockAreaRenderer for GeometryDockSkin {
         let frame = self.inner.split_frame(node, axis, window, cx);
         match background {
             Some(color) => frame.bg(color),
-            None => frame.bg(cx.theme().tokens.tab_bar),
+            None => frame.bg(cx.theme().tokens.background),
         }
     }
 
@@ -681,7 +681,7 @@ impl DockAreaRenderer for GeometryDockSkin {
         let frame = self.inner.center_frame(window, cx).gap(style.gap.width);
         match style.gap.background {
             Some(color) => frame.bg(color),
-            None => frame.bg(cx.theme().tokens.tab_bar),
+            None => frame.bg(cx.theme().tokens.background),
         }
     }
 

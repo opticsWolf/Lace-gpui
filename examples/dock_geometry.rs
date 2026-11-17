@@ -240,24 +240,22 @@ impl Preset {
     fn style(self, cx: &App) -> DockGeometryStyle {
         let theme = cx.theme();
         match self {
+            // Lace's dock: a 7px seam in the window colour, no drop shadow,
+            // and a full-length 3px handle that only shows on hover.
             Preset::Flagship => DockGeometryStyle::new()
-                .gap(px(8.))
+                .gap(px(7.))
                 .gap_outer(px(6.))
                 .panel_radius(px(10.))
                 .outline(OutlineStyle::themed(px(1.)))
-                .shadow(
-                    ShadowSpec::new(black().alpha(0.35), point(px(0.), px(3.)), px(12.))
-                        .spread(px(-2.)),
-                )
                 .splitter(|s| {
-                    s.thickness(px(6.))
-                        .length(SplitterLength::Percent(0.45))
+                    s.thickness(px(3.))
+                        .length(SplitterLength::Percent(1.0))
                         .cap(SplitterCap::Rounded)
                         .colors(
                             SplitterColors::default()
-                                .idle(theme.colors.muted_foreground)
-                                .hovered(theme.colors.accent)
-                                .dragging(theme.colors.accent),
+                                .idle(theme.colors.background)
+                                .hovered(theme.colors.primary)
+                                .dragging(theme.colors.primary),
                         )
                 }),
             Preset::Minimal => DockGeometryStyle::new()
@@ -312,7 +310,7 @@ impl DockGeometryDemo {
         let editor = cx.new(|cx| {
             InfoPanel::new(
                 "Editor",
-                "The workbench is an h_split, so the seam to Outline gets a real 8 px gap.\n\nThe channel behind it is the split frame's background; the two groups are inset by half the gap on the seam side, which is why they share one centred channel.",
+                "The workbench is an h_split, so the seam to Outline gets a real 7 px gap.\n\nThe channel behind it is the split frame's background; the two groups are inset by half the gap on the seam side, which is why they share one centred channel.",
                 cx,
             )
         });
@@ -327,7 +325,7 @@ impl DockGeometryDemo {
         let outline = cx.new(|cx| {
             InfoPanel::new(
                 "Outline",
-                "DockGeometryStyle\n  gap: 8px, outer 6px\n  radius: 10px\n  outline: 1px theme border\n  shadow: y+3 blur 12 alpha .35\n  effect: per-panel shadow\n  splitter: 6px, 45%, rounded",
+                "DockGeometryStyle\n  gap: 7px window colour, outer 6px\n  radius: 10px\n  outline: 1px theme border\n  shadow: none\n  splitter: 3px, full length, on hover",
                 cx,
             )
         });
@@ -355,7 +353,7 @@ impl DockGeometryDemo {
         let logs = cx.new(|cx| {
             InfoPanel::new(
                 "Logs",
-                "12:00:01  INFO  geometry skin installed\n12:00:02  DEBUG  gap 8px · radius 10px · splitter 6px\n12:00:03  WARN  v_split gaps need the gpui-base panel-axis fix\n12:00:04  INFO  four dock regions, five tab groups\n12:00:05  INFO  Split lab uses stock inner splitters",
+                "12:00:01  INFO  geometry skin installed\n12:00:02  DEBUG  gap 7px · radius 10px · splitter 3px\n12:00:03  WARN  v_split gaps need the gpui-base panel-axis fix\n12:00:04  INFO  four dock regions, five tab groups\n12:00:05  INFO  Split lab uses stock inner splitters",
                 cx,
             )
         });
