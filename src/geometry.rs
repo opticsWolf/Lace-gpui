@@ -1070,10 +1070,18 @@ impl TabGroupRenderer for GeometryTabGroup {
 
         let half = style.gap.width * 0.5;
         let shadows = effect.shadows();
+        let node = group.node();
 
         div()
             .id(("lace-tab-panel", group.node().as_u64()))
             .bg(cx.theme().tokens.background)
+            // Note the group's painted size, so a pane dragged out of it
+            // floats at the size it had in the dock.
+            .child(
+                canvas(move |bounds, _, _| crate::floating::record_group(node, bounds), |_, _, _, _| {})
+                    .absolute()
+                    .size_full(),
+            )
             // A collapsed group is a strip of tabs with no content; the
             // actions act on content, so gate them the same way the stock does.
             .when(!group.is_collapsed(), |this| {
@@ -1236,7 +1244,8 @@ impl TabGroupRenderer for GeometryTabGroup {
         window: &mut Window,
         cx: &mut App,
     ) -> Option<AnyElement> {
-        self.inner.render_drop_indicator(indicator, window, cx)
+        let _ = window;
+        Some(crate::floating::drop_overlay(indicator, cx))
     }
 
     fn render_empty(

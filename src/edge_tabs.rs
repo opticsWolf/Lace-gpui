@@ -29,9 +29,9 @@ use gpui_kit::component::menu::DropdownMenu as _;
 use gpui_kit::component::theme::ActiveTheme as _;
 use gpui_kit::component::{Disableable as _, IconName, Sizable as _};
 use gpui_kit::gpui::{
-    canvas, div, point, prelude::FluentBuilder as _, px, size, transparent_black, AnyElement, App,
-    AppContext as _, Anchor, Bounds, Context, Global, Hsla, InteractiveElement as _, IntoElement,
-    ParentElement as _, Pixels, Point, Render, ScrollHandle, SharedString, TextRun,
+    canvas, div, point, prelude::FluentBuilder as _, px, transparent_black, AnyElement, App,
+    AppContext as _, Anchor, Bounds, Global, Hsla, InteractiveElement as _, IntoElement,
+    ParentElement as _, Pixels, Point, ScrollHandle, SharedString, TextRun,
     StatefulInteractiveElement as _, Styled as _, WeakEntity, Window,
 };
 
@@ -268,40 +268,17 @@ pub(crate) fn rule_line(width: Pixels, color: Hsla) -> impl IntoElement {
 }
 
 /// What a panel shows as its tab label.
-fn panel_title(panel: &Arc<dyn BasePanelView>, window: &mut Window, cx: &mut App) -> AnyElement {
+pub(crate) fn panel_title(
+    panel: &Arc<dyn BasePanelView>,
+    window: &mut Window,
+    cx: &mut App,
+) -> AnyElement {
     match PanelHandle::of(panel) {
         Some(handle) => match handle.tab_name(cx) {
             Some(name) => name.into_any_element(),
             None => handle.title(window, cx),
         },
         None => SharedString::from(panel.panel_name(cx)).into_any_element(),
-    }
-}
-
-/// The ghost tab that follows the pointer while a tab is dragged.
-struct EdgeDragPreview {
-    panel: Arc<dyn BasePanelView>,
-}
-
-impl Render for EdgeDragPreview {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let title = panel_title(&self.panel, window, cx);
-        let theme = cx.theme();
-        div()
-            .id("lace-edge-drag")
-            .cursor_grab()
-            .py_1()
-            .px_3()
-            .w_24()
-            .overflow_hidden()
-            .whitespace_nowrap()
-            .border_1()
-            .border_color(theme.border)
-            .rounded(theme.radius)
-            .text_color(theme.tab_foreground)
-            .bg(theme.tokens.tab_active)
-            .opacity(0.75)
-            .child(title)
     }
 }
 
@@ -833,13 +810,15 @@ impl EdgeTabBar {
                     this.when_some(drag, |this, drag| {
                         this.on_drag(drag, {
                             let panel = panel.clone();
+                            let node = group.node();
                             move |drag: &DragPanel, offset, _, cx| {
                                 cx.stop_propagation();
+                                // The whole pane lifts out at its docked size.
+                                let size = crate::floating::group_size(node)
+                                    .unwrap_or(crate::floating::FALLBACK_SIZE);
                                 drag.set_drag_offset(offset);
-                                drag.set_preview_size(size(px(96.), px(30.)));
-                                cx.new(|_| EdgeDragPreview {
-                                    panel: panel.clone(),
-                                })
+                                drag.set_preview_size(size);
+                                cx.new(|_| crate::floating::FloatingPane::new(panel.clone(), size))
                             }
                         })
                     })

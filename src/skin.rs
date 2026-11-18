@@ -24,6 +24,23 @@ pub fn hsla(c: Lace) -> Hsla {
     Hsla::from(rgba(u32::from_be_bytes(c)))
 }
 
+/// Lace's drop overlay: the frame and lit target in `overlay_frame`, the
+/// drop region in `overlay_color`. Lace paints that fill at its own alpha
+/// (64/255 by default); an opaque token is thinned to the same, so the
+/// panes under a drop always show through.
+pub fn drop_overlay_style(t: &Tokens) -> crate::floating::DropOverlayStyle {
+    let mut fill = hsla(t.overlay_color);
+    if fill.a > 0.6 {
+        fill.a = 64. / 255.;
+    }
+    crate::floating::DropOverlayStyle {
+        frame: hsla(t.overlay_frame),
+        fill,
+        cell: hsla(t.overlay_background),
+        glyph: hsla(t.overlay_arrow),
+    }
+}
+
 /// A hover/active shade of `c`, one button step off it toward contrast.
 fn shade(c: Lace) -> Lace {
     color::step_contrast(c, depth_steps::BUTTON[1])
@@ -357,6 +374,7 @@ pub fn apply_spec_styled(spec: &ThemeSpec, style: WidgetStyle, cx: &mut App) {
     }
     crate::edge_tabs::TabEdgeStyle::install(tab_edges(&tokens), cx);
     crate::sidebar::SidebarStyle::install(sidebar_style(&tokens), cx);
+    crate::floating::DropOverlayStyle::install(drop_overlay_style(&tokens), cx);
     // Colors were edited through `global_mut`, which does not rebuild the
     // Base projection (the stock scrollbar and resize handles) on its own.
     Theme::sync_base(cx);

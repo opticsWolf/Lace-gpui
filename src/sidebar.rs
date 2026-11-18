@@ -21,17 +21,20 @@
 use std::{cell::Cell, collections::HashMap, rc::Rc, sync::Arc, time::Duration};
 
 use gpui_kit::base::dock::{
-    DockArea, DockPlacement, InsertTarget, Panel as BasePanel, PanelId, PanelView,
+    AnyDrag, DockArea, DockEvent, DockPlacement, DropTarget, InsertTarget, Panel as BasePanel,
+    PanelId, PanelView,
 };
 use gpui_kit::component::dock::PanelHandle;
 use gpui_kit::component::Icon;
 use gpui_kit::gpui::{
-    canvas, div, font, prelude::FluentBuilder as _, px, svg, AnyElement, App,
+    canvas, div, font, prelude::FluentBuilder as _, px, svg, AnyElement, App, AppContext as _,
     Bounds, Context, Entity, FontWeight, Global, Hsla, InteractiveElement as _, IntoElement,
     KeyDownEvent, MouseButton, MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels, Point,
-    Render, SharedString, StatefulInteractiveElement as _, Styled as _, Task, TextRun,
-    WeakEntity, Window,
+    Render, SharedString, Size, StatefulInteractiveElement as _, Styled as _, Subscription, Task,
+    TextRun, WeakEntity, Window,
 };
+
+use crate::floating::FloatingPane;
 
 use crate::dock_icons::DockIcon;
 use crate::edge_tabs::{chrome_button, PinTarget, TITLE_BUTTON, TITLE_BUTTON_GAP};
@@ -175,6 +178,12 @@ struct Pinned {
     node: gpui_kit::base::dock::NodeId,
 }
 
+/// A sidebar tab in flight. The dock hands it back in
+/// [`DockEvent::DragDrop`] when it lands on a group.
+struct SidebarDrag {
+    panel: PanelId,
+}
+
 /// The dock with Lace's auto-hide sidebars around it. Render this in place
 /// of the [`DockArea`].
 pub struct Sidebars {
@@ -191,6 +200,9 @@ pub struct Sidebars {
     pending: Option<Task<()>>,
     resizing: Rc<Cell<bool>>,
     center: Rc<Cell<Bounds<Pixels>>>,
+    /// Drops of sidebar tabs on the dock; taken on the first render, which
+    /// has the window the docking needs.
+    dock_events: Option<Subscription>,
 }
 
 impl Sidebars {
@@ -210,6 +222,92 @@ impl Sidebars {
             pending: None,
             resizing: Rc::new(Cell::new(false)),
             center: Rc::new(Cell::new(Bounds::default())),
+            dock_events: None,
+        }
+    }
+
+    fn on_dock_event(
+        &mut self,
+        _: &Entity<DockArea>,
+        event: &DockEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let DockEvent::DragDrop { item, target } = event else {
+            return;
+        };
+        if let Some(drag) = item.value().downcast_ref::<SidebarDrag>() {
+            self.dock_at(drag.panel, *target, window, cx);
+        }
+    }
+
+    /// Put a pinned panel into the dock where a drag of its sidebar tab
+    /// landed: into the target group, or split off one of its sides.
+    pub fn dock_at(
+        &mut self,
+        panel: PanelId,
+        target: DropTarget,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(ix) = self.pinned.iter().position(|p| p.id == panel) else {
+            return;
+        };
+        let pinned = self.pinned.remove(ix);
+        if self.open == Some(panel) {
+            self.close_overlay(cx);
+        }
+        let node = target.node();
+        self.area.update(cx, |area, cx| {
+            let placement = [
+                DockPlacement::Center,
+                DockPlacement::Left,
+                DockPlacement::Right,
+                DockPlacement::Bottom,
+            ]
+            .into_iter()
+            .find(|placement| {
+                area.layout(*placement)
+                    .is_some_and(|tree| tree.node_ids().contains(&node))
+            })
+            .unwrap_or(pinned.placement);
+            area.add_panel_view(pinned.view.clone(), placement, None, window, cx);
+            if placement != DockPlacement::Center && !area.is_dock_open(placement) {
+                area.toggle_dock(placement, window, cx);
+            }
+            let insert = match target.placement() {
+                None => InsertTarget::Tabs {
+                    node,
+                    ix: None,
+                    activate: true,
+                },
+                Some(side) => InsertTarget::Split {
+                    node,
+                    placement: side,
+                    size: None,
+                },
+            };
+            area.move_panel(panel, insert, window, cx);
+            area.select_panel(panel, window, cx);
+        });
+        cx.notify();
+    }
+
+    /// The size a pinned panel floats at while its tab is dragged: its
+    /// overlay's.
+    fn float_size(&self, pinned: &Pinned) -> Size<Pixels> {
+        let center = self.center.get().size;
+        let extent = self.extent(pinned);
+        if pinned.edge.vertical() {
+            Size {
+                width: extent,
+                height: (center.height - INSET * 2.).max(MIN_HEIGHT),
+            }
+        } else {
+            Size {
+                width: (center.width - INSET * 2.).max(MIN_WIDTH),
+                height: extent,
+            }
         }
     }
 
@@ -567,6 +665,18 @@ impl Sidebars {
                 this.tab_hovered(id, *hovered, window, cx)
             }))
             .on_click(cx.listener(move |this, _, window, cx| this.tab_clicked(id, window, cx)))
+            // Dragging the tab lifts the pane out of the sidebar; the dock
+            // shows where it would land, and `on_dock_event` docks it there.
+            .on_drag(AnyDrag::new(SidebarDrag { panel: id }), {
+                let view = pinned.view.clone();
+                let size = self.float_size(pinned);
+                let me = cx.weak_entity();
+                move |_: &AnyDrag, _, _, cx| {
+                    cx.stop_propagation();
+                    _ = me.update(cx, |this, cx| this.close_overlay(cx));
+                    cx.new(|_| FloatingPane::new(view.clone(), size))
+                }
+            })
             .into_any_element()
     }
 
@@ -700,6 +810,10 @@ impl Sidebars {
 
 impl Render for Sidebars {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.dock_events.is_none() {
+            let area = self.area.clone();
+            self.dock_events = Some(cx.subscribe_in(&area, window, Self::on_dock_event));
+        }
         let style = SidebarStyle::current(cx);
         let left = self.rail(SideEdge::Left, style, window, cx);
         let right = self.rail(SideEdge::Right, style, window, cx);

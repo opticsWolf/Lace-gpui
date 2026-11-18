@@ -63,6 +63,8 @@ pub mod edge_tabs;
 pub mod dock_icons;
 #[cfg(feature = "gpui-kit")]
 pub mod sidebar;
+#[cfg(feature = "gpui-kit")]
+pub mod floating;
 
 /// The Lace release this crate was ported from.
 pub const LACE_VERSION: &str = "0.9.7";
