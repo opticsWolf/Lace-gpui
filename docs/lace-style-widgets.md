@@ -11,7 +11,7 @@ Lace has two layers of theming:
   state changes expressed as lightness steps rather than gradients.
 
 `BaseStyle` (`src/base_style.rs`) is the second layer adapted to gpui-kit. It
-is not another colour preset: it is applied on top of any of the sixteen
+is not another colour preset: it is applied on top of any of the curated
 palettes, and it can be toggled at runtime.
 
 ```rust
@@ -49,7 +49,7 @@ skin::apply_styled("midnight", WidgetStyle::Theme, cx);
 
 `BaseStyle::from_tokens` derives everything from a built `Tokens`.
 `BaseStyle::from_spec` uses the spec's real contrast level; `from_tokens`
-assumes `normal`, which is true of all sixteen curated presets.
+assumes `normal`, which is true of every curated preset.
 
 ## Depth on top of LaceStyle
 

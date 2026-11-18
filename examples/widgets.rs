@@ -21,7 +21,7 @@
 //! - **Navigation** — breadcrumbs, tab bars, a stepper, pagination,
 //!   keyboard hints, links and an accordion.
 //!
-//! The arrows in the header walk all sixteen Lace presets live. Everything
+//! The arrows in the header walk all the curated Lace presets live. Everything
 //! recolours through [`lace_gpui::skin`], no restart.
 
 use gpui_kit::component::{
@@ -413,7 +413,7 @@ fn open_about(window: &mut Window, cx: &mut App) {
                     .child(
                         DescriptionList::new()
                             .columns(1)
-                            .item("Presets", "16 curated themes", 1)
+                            .item("Presets", "37 curated themes", 1)
                             .item("Tokens", "78 colours + 7 geometry values", 1)
                             .item("Contrast", "WCAG floors enforced on every build", 1)
                             .item("Bridge", "lace_gpui::skin \u{2192} gpui_kit::ThemeColor", 1),

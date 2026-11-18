@@ -12,15 +12,26 @@
 //!   derivation (Lace's `_DEPTH` steps, selection modes, keep_tint).
 //! - [`contrast`] — the rulebook: WCAG floors per role and contrast level,
 //!   surface separation per depth, explicit-colour capping, and [`enforce`].
-//! - [`themes`] — 16 curated presets, from midnight to cyberpunk_neon.
+//! - [`themes`] — 37 curated presets in Lace's five menu groups.
 //! - [`skin`] *(feature `gpui-kit`)* — the bridge: `apply("dracula", cx)`
-//!   paints a running gpui-kit app with Lace's tokens.
+//!   paints a running gpui-kit app with Lace's tokens and installs the dock
+//!   styles below.
 //! - [`base_style`] *(feature `gpui-kit`)* — LaceStyle's flat widget layer:
 //!   derived outlines, state steps, focus ring, scrollbar and slider mixes.
 //! - [`button`] *(feature `gpui-kit`)* — theme-driven button halos: an accent
 //!   hover glow plus a denser press glow from one call, no view state needed.
 //! - [`geometry`] *(feature `gpui-kit`)* — an application-side dock skin:
 //!   gaps, rounded panels, outlines, shadow/glow and configurable splitters.
+//! - [`edge_tabs`] *(feature `gpui-kit`)* — Lace's dock tab strip: outlines,
+//!   the accent stripe, overflow, close and pin buttons.
+//! - [`sidebar`] *(feature `gpui-kit`)* — auto-hide sidebars with peek,
+//!   pin/unpin, drag-to-dock and Lace's three focus modes.
+//! - [`floating`] *(feature `gpui-kit`)* — the whole-pane drag preview and
+//!   Lace's five-target drop overlay.
+//! - [`dock_icons`] *(feature `gpui-kit`)* — Lace's tabler dock icons.
+//!
+//! `QUICKREF.md` and `ARCHITECTURE.md` at the repository root give the API
+//! at a glance and how the pieces fit together.
 //!
 //! ```
 //! // The colour core alone:
@@ -34,10 +45,9 @@
 //!
 //! ## Fidelity
 //!
-//! Faithful port of Lace 0.9.7's build path with three documented
-//! simplifications, all in the README: gpui has no Qt palette roles, so the
-//! Fusion bevel tokens ride along unused; the sidebar's gradient hover pair
-//! maps to gpui's flat hover fill; and status colours gain a small
+//! Faithful port of Lace 0.9.7's build path with two documented
+//! simplifications, both in the README: gpui has no Qt palette roles, so the
+//! Fusion bevel tokens ride along unused; and status colours gain a small
 //! visibility floor Lace applies at a different layer.
 
 pub mod color;

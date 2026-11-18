@@ -8,7 +8,7 @@
 //!
 //! A dock area (left rail 240px, right outline 220px, bottom log 140px,
 //! tabbed editor in the center) wearing whichever Lace theme is current.
-//! The status bar's button walks all 16 presets in Lace's dark-to-light
+//! The status bar's button walks all the curated presets in Lace's dark-to-light
 //! order — every widget in the window recolours through
 //! [`lace_gpui::skin`], no restart, no reload.
 //!

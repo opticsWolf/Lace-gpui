@@ -247,7 +247,7 @@ impl BaseStyle {
     /// Derive LaceStyle's rules from a palette.
     ///
     /// `Tokens` does not carry the spec's contrast level, so editor themes
-    /// are assumed to be at `normal` — true of all sixteen curated presets.
+    /// are assumed to be at `normal` — true of every curated preset.
     /// Prefer [`BaseStyle::from_spec`] when the spec is at hand.
     pub fn from_tokens(t: &Tokens) -> Self {
         let outline_level = Self::outline_level(t.outline_strength, Contrast::Normal);

@@ -330,19 +330,19 @@ impl WidgetStyle {
 }
 
 /// Paint the running app with the named theme. `false` when the name is not
-/// one of the 16 curated presets.
+/// one of the curated presets in [`crate::ALL`].
 pub fn apply(name: &str, cx: &mut App) -> bool {
     apply_styled(name, WidgetStyle::Theme, cx)
 }
 
 /// Paint the running app with the named theme and LaceStyle's flat widget
-/// layer. `false` when the name is not one of the 16 curated presets.
+/// layer. `false` when the name is not one of the curated presets.
 pub fn apply_base(name: &str, cx: &mut App) -> bool {
     apply_styled(name, WidgetStyle::LaceBase, cx)
 }
 
 /// Paint the running app with the named theme and the chosen widget
-/// rendering. `false` when the name is not one of the 16 curated presets.
+/// rendering. `false` when the name is not one of the curated presets.
 pub fn apply_styled(name: &str, style: WidgetStyle, cx: &mut App) -> bool {
     match crate::themes::by_name(name) {
         Some(spec) => {
