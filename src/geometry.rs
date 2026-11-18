@@ -487,7 +487,32 @@ impl GroupSides {
         }
     }
 
-    /// True when a vertical split would want a margin that 0.8 cannot honour.
+    /// The sides a child at `index` of a `count`-slot split owns, when the
+    /// split itself owns `self`: its own seams, plus each of the split's
+    /// interior edges the child reaches (all of them across the axis, and
+    /// the leading or trailing one for the first or last child).
+    pub fn nested(self, axis: Axis, index: usize, count: usize) -> Self {
+        let own = Self::for_child(axis, index, count);
+        let first = index == 0;
+        let last = index + 1 == count;
+        match axis {
+            Axis::Horizontal => Self {
+                left: own.left || first && self.left,
+                right: own.right || last && self.right,
+                top: self.top,
+                bottom: self.bottom,
+            },
+            Axis::Vertical => Self {
+                left: self.left,
+                right: self.right,
+                top: own.top || first && self.top,
+                bottom: own.bottom || last && self.bottom,
+            },
+        }
+    }
+
+    /// True when a vertical split wants a gap on this group. 0.8 cannot honour
+    /// it as a margin, so the skin paints the group's card inset instead.
     pub fn has_unapplied_vertical(&self) -> bool {
         self.top || self.bottom
     }
@@ -495,13 +520,22 @@ impl GroupSides {
 
 /// Which sides of `target` are interior in this tree, if it is here.
 fn split_sides(node: &PaneNode, target: NodeId) -> Option<GroupSides> {
+    sides_within(node, target, GroupSides::default())
+}
+
+/// `split_sides` below a node whose own interior sides are `outer`. A group
+/// owes a gap on every edge it shares with an interior seam, however deep
+/// it sits: the groups of a column that is the right half of a row all touch
+/// the row's seam, so each carries its share of that gap.
+fn sides_within(node: &PaneNode, target: NodeId, outer: GroupSides) -> Option<GroupSides> {
     match node.kind() {
-        PaneRef::Tabs { .. } => (node.id() == target).then(GroupSides::default),
+        PaneRef::Tabs { .. } => (node.id() == target).then_some(outer),
         PaneRef::Split { axis, children, .. } => {
-            if let Some(index) = children.iter().position(|child| child.id() == target) {
-                return Some(GroupSides::for_child(axis, index, children.len()));
-            }
-            children.iter().find_map(|child| split_sides(child, target))
+            let count = children.len();
+            children.iter().enumerate().find_map(|(index, child)| {
+                let sides = outer.nested(axis, index, count);
+                sides_within(child, target, sides)
+            })
         }
     }
 }
@@ -1071,10 +1105,39 @@ impl TabGroupRenderer for GeometryTabGroup {
         let half = style.gap.width * 0.5;
         let shadows = effect.shadows();
         let node = group.node();
+        let radius = style.panel.corner_radius;
+        let background = cx.theme().tokens.background;
+        let border = cx.theme().border;
+
+        // Horizontal gaps are margins: they shrink the group inside its row
+        // slot. Vertical ones cannot be, because base sizes the group
+        // `size_full()` after the skin styles it, and a full-height group
+        // with a top or bottom margin overflows its slot into the next one,
+        // cutting off that group's tabs. So in a column the frame keeps the
+        // whole slot, transparent, and paints its card inset by the gap; its
+        // padding keeps the tabs and content on the card.
+        let inset = sides.top || sides.bottom;
+        let card = inset.then(|| {
+            div()
+                .absolute()
+                .left_0()
+                .right_0()
+                .top(if sides.top { half } else { px(0.) })
+                .bottom(if sides.bottom { half } else { px(0.) })
+                .bg(background)
+                .when(radius > px(0.), |this| this.rounded(radius))
+                .when_some(outline, |this, outline| {
+                    this.border(outline.width)
+                        .border_color(outline.color.unwrap_or(border))
+                })
+                .when(!shadows.is_empty(), |this| this.shadow(shadows.clone()))
+        });
+        let rim = outline.map_or(px(0.), |outline| outline.width);
 
         div()
             .id(("lace-tab-panel", group.node().as_u64()))
-            .bg(cx.theme().tokens.background)
+            .when(!inset, |this| this.bg(background))
+            .children(card)
             // Note the group's painted size, so a pane dragged out of it
             // floats at the size it had in the dock.
             .child(
@@ -1105,17 +1168,19 @@ impl TabGroupRenderer for GeometryTabGroup {
                     }
                 })
             })
-            .when(style.panel.corner_radius > px(0.), |this| {
-                this.rounded(style.panel.corner_radius)
+            .when(!inset, |this| {
+                this.when(radius > px(0.), |this| this.rounded(radius))
+                    .when_some(outline, |this, outline| {
+                        this.border(outline.width)
+                            .border_color(outline.color.unwrap_or(border))
+                    })
+                    .when(!shadows.is_empty(), |this| this.shadow(shadows))
             })
-            .when_some(outline, |this, outline| {
-                this.border(outline.width)
-                    .border_color(outline.color.unwrap_or(cx.theme().border))
+            .when(inset, |this| {
+                this.p(rim)
+                    .when(sides.top, |this| this.pt(half + rim))
+                    .when(sides.bottom, |this| this.pb(half + rim))
             })
-            .when(!shadows.is_empty(), |this| this.shadow(shadows))
-            // Horizontal margins shrink inside a row panel. Vertical margins
-            // would overflow a `size_full()` group in 0.8, so `top`/`bottom`
-            // stay computed but unapplied until the panel axis fix lands.
             .when(sides.left, |this| this.ml(half))
             .when(sides.right, |this| this.mr(half))
     }
@@ -1285,6 +1350,24 @@ mod tests {
         assert!(!base
             .colors(SplitterColors::default().idle(hsla(0.0, 0.0, 1.0, 1.0)))
             .is_default());
+    }
+
+    #[test]
+    fn nested_groups_keep_the_seams_they_touch() {
+        let side = |left, right, top, bottom| GroupSides { left, right, top, bottom };
+        // The right half of a row, split into a column: both groups of the
+        // column touch the row's seam on their left.
+        let column = side(true, false, false, false);
+        assert_eq!(column.nested(Axis::Vertical, 0, 2), side(true, false, false, true));
+        assert_eq!(column.nested(Axis::Vertical, 1, 2), side(true, false, true, false));
+        // A row inside its lower group: only the row's first group reaches
+        // the outer seam; the second has the row's own seam on its left.
+        let row = column.nested(Axis::Vertical, 1, 2);
+        assert_eq!(row.nested(Axis::Horizontal, 0, 2), side(true, true, true, false));
+        assert_eq!(row.nested(Axis::Horizontal, 1, 2), side(true, false, true, false));
+        // A column that is the left half of a row keeps no left gap.
+        let left = side(false, true, false, false);
+        assert_eq!(left.nested(Axis::Vertical, 0, 2), side(false, true, false, true));
     }
 
     #[test]

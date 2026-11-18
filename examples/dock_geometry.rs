@@ -22,9 +22,9 @@
 //! The top bar switches between three presets and cycles the Lace themes;
 //! the shadow button gives the active Split lab panel its own effect.
 //!
-//! Vertical gaps **inside a `v_split`** still need the gpui-base panel-axis fix;
-//! inter-dock vertical gaps, including the Output dock, do not. See
-//! `docs/gpui-kit-0.8-feasibility.md`.
+//! Vertical gaps **inside a `v_split`** are painted: the group's card is inset
+//! within its slot, since 0.8 cannot shrink a group with a vertical margin.
+//! See `docs/gpui-kit-0.8-feasibility.md`.
 
 use std::sync::Arc;
 
@@ -353,7 +353,7 @@ impl DockGeometryDemo {
         let logs = cx.new(|cx| {
             InfoPanel::new(
                 "Logs",
-                "12:00:01  INFO  geometry skin installed\n12:00:02  DEBUG  gap 7px · radius 10px · splitter 3px\n12:00:03  WARN  v_split gaps need the gpui-base panel-axis fix\n12:00:04  INFO  four dock regions, five tab groups\n12:00:05  INFO  Split lab uses stock inner splitters",
+                "12:00:01  INFO  geometry skin installed\n12:00:02  DEBUG  gap 7px · radius 10px · splitter 3px\n12:00:03  INFO  v_split gaps painted as inset cards\n12:00:04  INFO  four dock regions, five tab groups\n12:00:05  INFO  Split lab uses stock inner splitters",
                 cx,
             )
         });

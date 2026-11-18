@@ -138,11 +138,12 @@ What 0.8 can and cannot express here, in short (the full audit is in
   centre frame is a flex column, so their own `gap` spaces left/centre/right
   and centre/Logs without touching panel geometry. `gap_outer` pads the area
   against the window frame. This is what closes the Logs gap.
-- **Split gaps inside a region are horizontal.** `ResizablePanel` is always a
-  row and base forces the group to `size_full()`, so vertical split margins
-  overflow instead of shrinking. This only affects a `v_split` between panels
-  in one region; it needs the gpui-base panel-axis fix. Inter-dock vertical
-  gaps are already handled by the centre frame's flex gap.
+- **Vertical split gaps are painted, not laid out.** `ResizablePanel` is
+  always a row and base forces the group to `size_full()`, so a vertical
+  margin would overflow into the next slot. A group in a `v_split` keeps its
+  whole slot, transparent, and paints its card inset by half the gap, with
+  padding keeping the tabs and content on it. Horizontal split gaps are real
+  margins; inter-dock gaps are the centre frame's flex gap.
 - **Gaps wider than 9 px** leave inert strips at split seams: the hit band is
   still a base-owned `pub(crate)` constant. Dock-region gaps are flex space,
   so they are not part of a hit band; the dock-edge handle stays at the dock

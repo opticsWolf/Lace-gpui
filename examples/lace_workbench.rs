@@ -1147,7 +1147,7 @@ impl Console {
             (Tone::Info, "12:00:01  INFO   geometry skin installed"),
             (Tone::Neutral, "12:00:02  DEBUG  LaceStyle preset installed"),
             (Tone::Info, "12:00:03  INFO   13 panes in 6 groups, 2 pinned"),
-            (Tone::Warning, "12:00:04  WARN   v_split gaps need the gpui-base panel-axis fix"),
+            (Tone::Info, "12:00:04  INFO   v_split gaps painted as inset cards"),
             (Tone::Success, "12:00:05  OK     every pane rendered"),
         ];
         Self {
