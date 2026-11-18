@@ -134,8 +134,9 @@ impl Render for FloatingPane {
             .flex()
             .flex_none()
             .items_center()
-            .gap_1()
-            .px_3()
+            // The docked tab's padding without its close box.
+            .pl(px(8.) - outline)
+            .pr(px(9.) - outline)
             .h_full()
             .text_sm()
             .whitespace_nowrap()
@@ -179,7 +180,10 @@ impl Render for FloatingPane {
             .flex_col()
             .overflow_hidden()
             .opacity(FLOAT_OPACITY)
-            .bg(theme.tokens.background)
+            .bg(match edges.panel_bg {
+                Some(color) => color.into(),
+                None => theme.tokens.background.background,
+            })
             .rounded(radius)
             .border_1()
             .border_color(overlay.frame)

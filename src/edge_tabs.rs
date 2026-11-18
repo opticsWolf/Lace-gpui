@@ -77,6 +77,9 @@ pub struct TabEdgeStyle {
     /// The group frame's width, and its bottom-corner radius.
     pub frame_width: Pixels,
     pub frame_radius: Pixels,
+    /// The pane body's fill (Lace's `PANEL.bg_normal`). `None` keeps the
+    /// theme background.
+    pub panel_bg: Option<Hsla>,
 }
 
 impl Default for TabEdgeStyle {
@@ -99,6 +102,7 @@ impl Default for TabEdgeStyle {
             frame_focus: transparent_black(),
             frame_width: px(0.),
             frame_radius: px(0.),
+            panel_bg: None,
         }
     }
 }
@@ -202,6 +206,13 @@ pub(crate) const TITLE_BUTTON: Pixels = px(22.);
 pub(crate) const TITLE_BUTTON_GAP: Pixels = px(8.);
 /// The tab close box: Lace's 17px with its 14px icon.
 const TAB_CLOSE_BUTTON: Pixels = px(18.);
+/// Lace's dock tab margins at its 10pt font (spacing = 4): 2·spacing ahead
+/// of the title, spacing before the close box, 4/3·spacing after it.
+const TAB_LEAD: Pixels = px(8.);
+const TAB_BEFORE_CLOSE: Pixels = px(4.);
+const TAB_TAIL: Pixels = px(5.);
+/// Lace's tab bar spacing between tabs (`TAB.margin`).
+const TAB_SPACING: Pixels = px(3.);
 /// The ‹ › pair's share of the strip: its 4px lead, two title buttons and
 /// the 2px between them.
 const TAB_ARROWS_WIDTH: Pixels = px(4. + 22. + 2. + 22.);
@@ -667,8 +678,15 @@ impl EdgeTabBar {
         // Lace tabs elide before the row scrolls: each may shrink to its
         // cramped minimum, a lone one down to its stub.
         let factor = if tab_n > 1 { CRAMPED_FACTOR } else { 1. };
-        let tab_pad = window.rem_size() * 0.75; // px_3
-        let tab_gap = window.rem_size() * 0.25; // gap_1
+        // Lace's tab layout, from the outer edge: 2·spacing before the
+        // title, then spacing, the 24px close box and 4/3·spacing after it
+        // (spacing = a quarter of the font height). The close box here is
+        // 18px, so its 3px a side go into the margins around it.
+        let border = if outlined { outline } else { px(0.) };
+        let lead = TAB_LEAD - border;
+        let close_box_pad = (px(24.) - TAB_CLOSE_BUTTON) / 2.;
+        let tail = TAB_TAIL - border;
+        let tab_gap = TAB_BEFORE_CLOSE + close_box_pad;
         self.overflow.set(overflow);
 
         let mut tabs: Vec<AnyElement> = Vec::with_capacity(visible.len() + 1);
@@ -695,8 +713,14 @@ impl EdgeTabBar {
             let title_min = title_minimum(&label, icon, factor, window);
             // The tab keeps its padding, outline and close box whole; only
             // the title gives.
-            let tab_min = tab_pad * 2.
-                + if outlined { outline * 2. } else { px(0.) }
+            let pad_right = if with_close {
+                tail + close_box_pad
+            } else {
+                TAB_BEFORE_CLOSE + tail
+            };
+            let tab_min = lead
+                + pad_right
+                + border * 2.
                 + title_min
                 + if with_close { tab_gap + TAB_CLOSE_BUTTON } else { px(0.) };
 
@@ -708,8 +732,8 @@ impl EdgeTabBar {
                 .flex_shrink(1.)
                 .min_w(tab_min)
                 .items_center()
-                .gap_1()
-                .px_3()
+                .pl(lead)
+                .pr(pad_right)
                 .text_sm()
                 .whitespace_nowrap()
                 .cursor_pointer()
@@ -783,8 +807,8 @@ impl EdgeTabBar {
                     let id = panel.panel_id(cx);
                     this.child(
                         chrome_button(("lace-close-tab", ix), DockIcon::CloseTab, TAB_CLOSE_BUTTON)
-                            .ml(px(4.))
-                            .mr(-px(4.))
+                            .flex_none()
+                            .ml(tab_gap)
                             .on_click(move |_, window, cx| {
                                 cx.stop_propagation();
                                 group.close(id, window, cx);
@@ -957,9 +981,8 @@ impl EdgeTabBar {
                     .items_end()
                     // Under `below_title` the first tab's outline is the
                     // frame's side carried up, so it sits flush left.
-                    // Lace's `TAB.margin` (3) leaves about 5px between
-                    // outlined tabs.
-                    .when(outlined, |this| this.gap(px(5.)))
+                    // Lace's tab bar spaces outlined tabs by `TAB.margin`.
+                    .when(outlined, |this| this.gap(TAB_SPACING))
                     .when(outlined && !edges.below_title, |this| this.pl(px(4.)))
                     .overflow_x_scroll()
                     .track_scroll(&self.scroll)

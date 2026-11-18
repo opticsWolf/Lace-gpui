@@ -245,7 +245,8 @@ impl Preset {
             Preset::Flagship => DockGeometryStyle::new()
                 .gap(px(7.))
                 .gap_outer(px(6.))
-                .panel_radius(px(10.))
+                // The theme's card radius (Lace's `corner_radius`).
+                .panel_radius(theme.radius_lg)
                 .outline(OutlineStyle::themed(px(1.)))
                 .splitter(|s| {
                     s.thickness(px(3.))

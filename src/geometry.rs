@@ -1106,7 +1106,12 @@ impl TabGroupRenderer for GeometryTabGroup {
         let shadows = effect.shadows();
         let node = group.node();
         let radius = style.panel.corner_radius;
-        let background = cx.theme().tokens.background;
+        // The pane body takes the theme's panel colour, as Lace's dock areas
+        // do; the canvas colour belongs to the gaps around it.
+        let background: gpui_kit::gpui::Background = match edges.panel_bg {
+            Some(color) => color.into(),
+            None => cx.theme().tokens.background.background,
+        };
         let border = cx.theme().border;
 
         // Horizontal gaps are margins: they shrink the group inside its row

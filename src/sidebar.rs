@@ -28,8 +28,8 @@ use gpui_kit::component::dock::PanelHandle;
 use gpui_kit::component::Icon;
 use gpui_kit::gpui::{
     canvas, div, font, prelude::FluentBuilder as _, px, svg, AnyElement, App, AppContext as _,
-    Bounds, Context, Entity, FontWeight, Global, Hsla, InteractiveElement as _, IntoElement,
-    KeyDownEvent, MouseButton, MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels, Point,
+    Bounds, Context, Entity, FocusHandle, FontWeight, Global, Hsla, InteractiveElement as _, IntoElement,
+    KeyDownEvent, linear_color_stop, linear_gradient, MouseButton, MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels, Point,
     Render, SharedString, Size, StatefulInteractiveElement as _, Styled as _, Subscription, Task,
     TextRun, WeakEntity, Window,
 };
@@ -79,7 +79,10 @@ pub struct SidebarStyle {
     pub rail: Pixels,
     pub rail_bg: Hsla,
     pub tab_bg_active: Hsla,
+    /// A hovered tab fills with a left-to-right gradient from `tab_bg_hover`
+    /// to this, as Lace's `tab_bg_hover_start`/`_end`.
     pub tab_bg_hover: Hsla,
+    pub tab_bg_hover_end: Hsla,
     pub tab_text: Hsla,
     pub tab_text_active: Hsla,
     /// Outline width; zero for the classic flat rail.
@@ -109,6 +112,7 @@ impl Default for SidebarStyle {
             rail_bg: gray(0.1),
             tab_bg_active: gray(0.18),
             tab_bg_hover: gray(0.22),
+            tab_bg_hover_end: gray(0.22),
             tab_text: gray(0.75),
             tab_text_active: gray(1.),
             outline: px(0.),
@@ -203,6 +207,37 @@ pub struct Sidebars {
     /// Drops of sidebar tabs on the dock; taken on the first render, which
     /// has the window the docking needs.
     dock_events: Option<Subscription>,
+    focus_mode: SidebarFocus,
+    /// Focus from before the overlay opened, for `TakeAndRestore`.
+    restore: Option<FocusHandle>,
+    /// The panel that just closed while `restore` waits for the next render,
+    /// which has the window to move focus.
+    closed_focus: Option<FocusHandle>,
+}
+
+/// How a sidebar panel takes keyboard focus when it slides out (Lace's
+/// `SideBarFocusBehavior`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SidebarFocus {
+    /// Focus the panel, and give focus back where it was once it hides.
+    #[default]
+    TakeAndRestore,
+    /// Focus the panel and leave focus wherever it ends up.
+    TakeOnly,
+    /// Leave focus alone; the panel gets it only when clicked.
+    NoTransfer,
+}
+
+impl SidebarFocus {
+    pub const ALL: [SidebarFocus; 3] = [Self::TakeAndRestore, Self::TakeOnly, Self::NoTransfer];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::TakeAndRestore => "Take Focus & Restore",
+            Self::TakeOnly => "Take Focus Only",
+            Self::NoTransfer => "No Focus Transfer",
+        }
+    }
 }
 
 impl Sidebars {
@@ -223,6 +258,9 @@ impl Sidebars {
             resizing: Rc::new(Cell::new(false)),
             center: Rc::new(Cell::new(Bounds::default())),
             dock_events: None,
+            focus_mode: SidebarFocus::default(),
+            restore: None,
+            closed_focus: None,
         }
     }
 
@@ -429,18 +467,63 @@ impl Sidebars {
         if self.open != Some(panel) {
             self.maximized = false;
         }
+        let handle = pinned.view.focus_handle(cx);
         self.open = Some(panel);
         self.peek = peek;
         self.pending = None;
-        if !peek {
-            let handle = pinned.view.focus_handle(cx);
+        self.closed_focus = None;
+        // As in Lace, a peek takes focus too: the panel is meant to be used
+        // straight away, and focus does not keep it open.
+        if self.focus_mode != SidebarFocus::NoTransfer {
+            if self.focus_mode == SidebarFocus::TakeAndRestore && self.restore.is_none() {
+                let inside = self
+                    .pinned
+                    .iter()
+                    .any(|p| p.view.focus_handle(cx).contains_focused(window, cx));
+                self.restore = window.focused(cx).filter(|_| !inside);            }
             window.focus(&handle, cx);
         }
         cx.notify();
     }
 
+    /// How opening a sidebar panel moves keyboard focus.
+    pub fn focus_behavior(&self) -> SidebarFocus {
+        self.focus_mode
+    }
+
+    pub fn set_focus_behavior(&mut self, mode: SidebarFocus, cx: &mut Context<Self>) {
+        self.focus_mode = mode;
+        if mode != SidebarFocus::TakeAndRestore {
+            self.restore = None;
+        }
+        cx.notify();
+    }
+
+    /// Give focus back to where it was before the overlay opened, once the
+    /// overlay is gone, unless the user has put it somewhere else since.
+    fn restore_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(closed) = self.closed_focus.take() else {
+            return;
+        };
+        let Some(previous) = self.restore.take() else {
+            return;
+        };
+        let elsewhere = window.focused(cx).is_some()
+            && !closed.is_focused(window)
+            && !closed.contains_focused(window, cx);
+        if !elsewhere {
+            window.focus(&previous, cx);
+        }
+    }
+
     /// Slide the open overlay back in.
     pub fn close_overlay(&mut self, cx: &mut Context<Self>) {
+        if self.restore.is_some() {
+            self.closed_focus = self.open_pinned().map(|p| p.view.focus_handle(cx));
+            if self.closed_focus.is_none() {
+                self.restore = None;
+            }
+        }
         self.open = None;
         self.peek = false;
         self.maximized = false;
@@ -451,10 +534,10 @@ impl Sidebars {
 
     /// Close a pinned panel for good (the title bar's ✕).
     fn close_pinned(&mut self, panel: PanelId, cx: &mut Context<Self>) {
-        self.pinned.retain(|p| p.id != panel);
         if self.open == Some(panel) {
             self.close_overlay(cx);
         }
+        self.pinned.retain(|p| p.id != panel);
         cx.notify();
     }
 
@@ -471,23 +554,17 @@ impl Sidebars {
         }));
     }
 
-    /// Hide a peeked overlay after the grace delay, unless the pointer or
-    /// focus came back to it by then.
+    /// Hide a peeked overlay after the grace delay, unless the pointer came
+    /// back to it by then. Focus does not count: a peek takes focus itself.
     fn schedule_hide(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.open.is_none() || !self.peek {
             return;
         }
-        self.schedule(HIDE_DELAY, window, cx, |this, window, cx| {
-            if this.peek && !this.over_panel && !this.over_rail && !this.overlay_focused(window, cx)
-            {
+        self.schedule(HIDE_DELAY, window, cx, |this, _, cx| {
+            if this.peek && !this.over_panel && !this.over_rail {
                 this.close_overlay(cx);
             }
         });
-    }
-
-    fn overlay_focused(&self, window: &Window, cx: &App) -> bool {
-        self.open_pinned()
-            .is_some_and(|p| p.view.focus_handle(cx).contains_focused(window, cx))
     }
 
     fn open_pinned(&self) -> Option<&Pinned> {
@@ -643,7 +720,15 @@ impl Sidebars {
             .justify_center()
             .gap(px(8.))
             .when(active, |this| this.bg(style.tab_bg_active))
-            .when(!active, |this| this.hover(|s| s.bg(style.tab_bg_hover)))
+            .when(!active, |this| {
+                this.hover(|s| {
+                    s.bg(linear_gradient(
+                        90.,
+                        linear_color_stop(style.tab_bg_hover, 0.),
+                        linear_color_stop(style.tab_bg_hover_end, 1.),
+                    ))
+                })
+            })
             .when(style.outline > px(0.), |this| {
                 this.border(style.outline)
                     .border_color(outline.unwrap_or(gpui_kit::gpui::transparent_black()))
@@ -658,7 +743,11 @@ impl Sidebars {
         };
         tab = round_tab(tab, edge, style);
 
-        tab.when(active, |this| this.child(indicator(edge, style)))
+        // Lace clips the indicator to the tab and strokes the outline over
+        // it, so an outline at least as wide hides it; only the rounded
+        // outline shows then.
+        let covered = outline.is_some() && style.indicator_width <= style.outline;
+        tab.when(active && !covered, |this| this.child(indicator(edge, style)))
             .children(icon_el)
             .child(label)
             .on_hover(cx.listener(move |this, hovered: &bool, window, cx| {
@@ -771,11 +860,17 @@ impl Sidebars {
                     this.schedule_hide(window, cx);
                 }
             }))
+            // The pane's handle lives here, as the dock's group holds it for
+            // docked panes: a click anywhere in the pane focuses it (unless a
+            // focusable element inside takes the click), and keys reach the
+            // overlay's Escape.
+            .track_focus(&pinned.view.focus_handle(cx))
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(|this, _, _, _| {
+                cx.listener(|this, _, _, cx| {
                     // Working in a peeked panel keeps it open.
                     this.peek = false;
+                    cx.notify();
                 }),
             )
             .on_mouse_down_out(cx.listener(|this, _, _, cx| {
@@ -813,6 +908,9 @@ impl Render for Sidebars {
         if self.dock_events.is_none() {
             let area = self.area.clone();
             self.dock_events = Some(cx.subscribe_in(&area, window, Self::on_dock_event));
+        }
+        if self.open.is_none() {
+            self.restore_focus(window, cx);
         }
         let style = SidebarStyle::current(cx);
         let left = self.rail(SideEdge::Left, style, window, cx);

@@ -236,6 +236,7 @@ pub const CATPPUCCIN: ThemeSpec = ThemeSpec {
 /// Clean neon-accented dark theme.
 pub const TOKYO_NIGHT: ThemeSpec = ThemeSpec {
     name: "tokyo_night",
+    tab_indicator: TabIndicator::None,
     tab_dimming: false,
     base: rgba(26, 27, 38, 255),
     accent: rgba(122, 162, 247, 255),
@@ -323,6 +324,7 @@ pub const CYBERPUNK_NEON: ThemeSpec = ThemeSpec {
 /// darker tab strip so the outlines read, the same 10px/8px geometry.
 pub const NEON_DUSK: ThemeSpec = ThemeSpec {
     name: "neon_dusk",
+    tab_indicator: TabIndicator::None,
     sidebar_tab_outline: 2.0,
     sidebar_tab_flat: SideTabFlat::Outward,
     base: rgba(34, 36, 48, 255),
@@ -374,6 +376,7 @@ pub const BASIC_NEO: ThemeSpec = ThemeSpec {
     tab_radius: 8.0,
     border_width: 1.5,
     title_height: 32.0,
+    tab_indicator_width: 1.5,
     ..ThemeSpec::DEFAULT
 };
 
@@ -637,6 +640,7 @@ pub const CYBERPUNK_EDGE_LIGHT: ThemeSpec = ThemeSpec {
 /// Dracula's palette on cyberpunk_edge's geometry: every tab outlined, the active one in violet.
 pub const VIOLET_HAZE: ThemeSpec = ThemeSpec {
     name: "violet_haze",
+    tab_indicator: TabIndicator::None,
     sidebar_tab_outline: 2.0,
     sidebar_tab_flat: SideTabFlat::None,
     border_below_title: true,
@@ -671,6 +675,7 @@ pub const VIOLET_HAZE: ThemeSpec = ThemeSpec {
 /// violet_haze on grey grounds with a cool trace, the violet deepened to read on them.
 pub const VIOLET_HAZE_NEUTRAL: ThemeSpec = ThemeSpec {
     name: "violet_haze_neutral",
+    tab_indicator: TabIndicator::None,
     sidebar_tab_outline: 2.0,
     sidebar_tab_flat: SideTabFlat::None,
     border_below_title: true,
@@ -706,6 +711,7 @@ pub const VIOLET_HAZE_NEUTRAL: ThemeSpec = ThemeSpec {
 /// violet_haze on lavender-white, a deeper violet for the active outline.
 pub const VIOLET_HAZE_LIGHT: ThemeSpec = ThemeSpec {
     name: "violet_haze_light",
+    tab_indicator: TabIndicator::None,
     sidebar_tab_outline: 2.0,
     sidebar_tab_flat: SideTabFlat::None,
     border_below_title: true,
@@ -741,6 +747,7 @@ pub const VIOLET_HAZE_LIGHT: ThemeSpec = ThemeSpec {
 /// Blue-black with a periwinkle accent: only the active tab is outlined.
 pub const MIDNIGHT_HAZE: ThemeSpec = ThemeSpec {
     name: "midnight_haze",
+    tab_indicator: TabIndicator::None,
     sidebar_tab_outline: 2.0,
     sidebar_tab_flat: SideTabFlat::None,
     border_below_title: true,
@@ -776,6 +783,7 @@ pub const MIDNIGHT_HAZE: ThemeSpec = ThemeSpec {
 /// midnight_haze on cool grey grounds, the periwinkle deepened to indigo.
 pub const MIDNIGHT_HAZE_NEUTRAL: ThemeSpec = ThemeSpec {
     name: "midnight_haze_neutral",
+    tab_indicator: TabIndicator::None,
     sidebar_tab_outline: 2.0,
     sidebar_tab_flat: SideTabFlat::None,
     border_below_title: true,
@@ -812,6 +820,7 @@ pub const MIDNIGHT_HAZE_NEUTRAL: ThemeSpec = ThemeSpec {
 /// midnight_haze on blue-white, an indigo outline on the active tab.
 pub const MIDNIGHT_HAZE_LIGHT: ThemeSpec = ThemeSpec {
     name: "midnight_haze_light",
+    tab_indicator: TabIndicator::None,
     sidebar_tab_outline: 2.0,
     sidebar_tab_flat: SideTabFlat::None,
     border_below_title: true,

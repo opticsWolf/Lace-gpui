@@ -320,7 +320,8 @@ impl ThemeSpec {
     tab_outline: 0.0,
     tab_outline_color: None,
     tab_outline_active: None,
-    tab_indicator: TabIndicator::None,
+    // Lace's stock tab bar underlines the active tab.
+    tab_indicator: TabIndicator::Bottom,
     tab_indicator_width: 2.0,
     tab_dimming: true,
     border_below_title: false,

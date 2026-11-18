@@ -424,6 +424,7 @@ pub fn tab_edges(t: &Tokens) -> crate::edge_tabs::TabEdgeStyle {
         frame_focus: hsla(t.focus_border_color),
         frame_width: px(t.border_width as f32),
         frame_radius: px(t.corner_radius as f32),
+        panel_bg: Some(hsla(t.panel_bg)),
     }
 }
 
@@ -437,6 +438,7 @@ pub fn sidebar_style(t: &Tokens) -> crate::sidebar::SidebarStyle {
         rail_bg: hsla(t.sidebar_bg),
         tab_bg_active: hsla(t.sidebar_tab_bg_active),
         tab_bg_hover: hsla(t.sidebar_tab_bg_hover_start),
+        tab_bg_hover_end: hsla(t.sidebar_tab_bg_hover_end),
         tab_text: hsla(t.sidebar_tab_text_normal),
         tab_text_active: hsla(t.sidebar_tab_text_active),
         outline,
@@ -613,11 +615,18 @@ mod tests {
 
     #[test]
     fn tab_edges_follow_the_theme() {
+        use crate::engine::TabIndicator;
         let edges = |name| tab_edges(&crate::build(by_name(name).unwrap()));
 
-        // A theme without edges keeps the stock strip.
+        // A classic theme underlines its active tab, as Lace's stock tab
+        // bar does, but has no outline or rule.
         let plain = edges("midnight");
-        assert!(!plain.draws_tabs() && !plain.has_rule());
+        assert!(plain.draws_tabs() && !plain.has_rule());
+        assert_eq!(plain.indicator, TabIndicator::Bottom);
+        assert_eq!(plain.indicator_width, px(2.));
+        assert_eq!(edges("dark_neo").indicator_width, px(1.5));
+        assert_eq!(edges("tokyo_night").indicator, TabIndicator::None);
+        assert_eq!(edges("violet_haze").indicator, TabIndicator::None);
 
         // Outlined: 2px tabs on a 2px rule; the inactive outline survives
         // the contrast pass as authored.

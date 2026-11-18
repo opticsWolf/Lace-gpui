@@ -35,7 +35,7 @@ use lace_gpui::geometry::{
     DockGeometryStyle, GeometryDockSkin, OutlineStyle, SplitterCap, SplitterColors,
     SplitterLength,
 };
-use lace_gpui::sidebar::Sidebars;
+use lace_gpui::sidebar::{SidebarFocus, Sidebars};
 use lace_gpui::skin;
 use lace_widgets::controls as lw;
 use lace_widgets::controls::{CheckState, Tone};
@@ -91,7 +91,8 @@ fn pane(style: &LaceStyle) -> Div {
         .flex_col()
         .gap(px(10.))
         .p(px(10.))
-        .bg(hsla(pal.window))
+        // No fill of its own: the dock paints the theme's panel colour
+        // behind every pane, as Lace's dock areas do.
         .text_color(hsla(pal.window_text))
         .text_size(px(style.font_size))
 }
@@ -1339,7 +1340,8 @@ impl Preset {
             Preset::Flagship => DockGeometryStyle::new()
                 .gap(px(7.))
                 .gap_outer(px(6.))
-                .panel_radius(px(10.))
+                // The theme's card radius (Lace's `corner_radius`).
+                .panel_radius(theme.radius_lg)
                 .outline(OutlineStyle::themed(px(1.)))
                 .splitter(|s| {
                     s.thickness(px(3.))
@@ -1475,6 +1477,8 @@ impl Render for Workbench {
         let w = cx.entity().downgrade();
         let theme = self.theme;
         let preset = Preset::ALL.iter().position(|p| *p == self.preset).unwrap_or(0);
+        let mode = self.sidebars.read(cx).focus_behavior();
+        let focus = SidebarFocus::ALL.iter().position(|m| *m == mode).unwrap_or(0);
 
         let bar = div()
             .flex()
@@ -1512,6 +1516,16 @@ impl Render for Workbench {
                 lw::Segmented::new("wb-preset", ["Flagship", "Minimal", "Stock"])
                     .selected(Some(preset))
                     .on_select(on(&w, |b: &mut Workbench, i: usize, _, cx| b.set_preset(Preset::ALL[i], cx))),
+            )
+            .child(div().w(px(16.)))
+            .child(
+                div().w(px(190.)).child(
+                    lw::ComboBox::new("wb-sidebar-focus", SidebarFocus::ALL.iter().map(|m| m.label()))
+                        .selected(Some(focus))
+                        .on_select(on(&w, |b: &mut Workbench, i: usize, _, cx| {
+                            b.sidebars.update(cx, |s, cx| s.set_focus_behavior(SidebarFocus::ALL[i], cx));
+                        })),
+                ),
             )
             .child(div().flex_1())
             .child(
