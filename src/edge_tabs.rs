@@ -677,8 +677,6 @@ impl EdgeTabBar {
         let active_outline = edges.active_outline(focused, tab_active_bg);
         let inactive_outline = edges.inactive_outline();
         let indicator_color = edges.indicator_for(focused, tab_active_bg);
-        // Outlined tabs stand clear of the strip's top edge.
-        let top_gap = if outlined { px(3.) } else { px(0.) };
         let bar = edges.indicator_width.max(px(1.));
         let corner = opts.corner.max(px(0.));
         // A tab sitting in the frame's top-left corner follows its curve.
@@ -738,15 +736,17 @@ impl EdgeTabBar {
                 .text_sm()
                 .whitespace_nowrap()
                 .cursor_pointer()
-                // The active tab reaches the strip's bottom and covers the
-                // rule there, opening into its panel; the others stop on it.
+                // Tabs reach the strip's top edge, as Lace's title bar has no
+                // top padding. The active tab also reaches its bottom and
+                // covers the rule there, opening into its panel; the others
+                // stop on it.
                 .map(|this| match selected {
                     true => this
-                        .h(edges.height - top_gap)
+                        .h(edges.height)
                         .bg(tab_active_bg)
                         .text_color(fg_active),
                     false => this
-                        .h(edges.height - top_gap - rule)
+                        .h(edges.height - rule)
                         .mb(rule)
                         .text_color(fg)
                         .hover(|this| this.bg(hover_bg).text_color(fg_active)),
