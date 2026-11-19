@@ -13,6 +13,8 @@
 //! - [`contrast`] — the rulebook: WCAG floors per role and contrast level,
 //!   surface separation per depth, explicit-colour capping, and [`enforce`].
 //! - [`themes`] — 37 curated presets in Lace's five menu groups.
+//! - [`modern`] — the modern look both paint layers share: radius floors
+//!   and soft elevation shadows, applied at paint time over the tokens.
 //! - [`skin`] *(feature `gpui-kit`)* — the bridge: `apply("dracula", cx)`
 //!   paints a running gpui-kit app with Lace's tokens and installs the dock
 //!   styles below.
@@ -53,6 +55,7 @@
 pub mod color;
 pub mod contrast;
 pub mod engine;
+pub mod modern;
 pub mod themes;
 
 #[cfg(feature = "gpui-kit")]

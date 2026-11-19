@@ -32,7 +32,7 @@ use gpui_kit::*;
 
 use lace_gpui::dock_icons::tab_label;
 use lace_gpui::geometry::{
-    DockGeometryStyle, GeometryDockSkin, OutlineStyle, SplitterCap, SplitterColors,
+    DockGeometryStyle, GeometryDockSkin, OutlineStyle, ShadowSpec, SplitterCap, SplitterColors,
     SplitterLength,
 };
 use lace_gpui::sidebar::{SidebarFocus, Sidebars};
@@ -1368,11 +1368,14 @@ impl Preset {
         let theme = cx.theme();
         match self {
             Preset::Flagship => DockGeometryStyle::new()
-                .gap(px(7.))
-                .gap_outer(px(6.))
-                // The theme's card radius (Lace's `corner_radius`).
+                .gap(px(8.))
+                .gap_outer(px(8.))
+                // The theme's card radius (Lace's `corner_radius`, through
+                // the modern floor).
                 .panel_radius(theme.radius_lg)
                 .outline(OutlineStyle::themed(px(1.)))
+                // Gentle elevation: cards float softly over the canvas.
+                .shadow(ShadowSpec::modern(!theme.mode.is_dark()))
                 .splitter(|s| {
                     s.thickness(px(3.))
                         .length(SplitterLength::Percent(1.0))

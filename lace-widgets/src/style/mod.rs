@@ -21,8 +21,10 @@ pub mod paint;
 pub mod rules;
 pub mod tones;
 
-use gpui_kit::gpui::{App, Global, Hsla};
+use gpui_kit::gpui::{point, px, App, BoxShadow, Global, Hsla};
 use lace_gpui::color::{self, Rgba};
+use lace_gpui::modern;
+pub use lace_gpui::modern::Elevation;
 use lace_gpui::contrast::{contrast_target, Role};
 use lace_gpui::engine::{Contrast, Scrollbar, ThemeSpec, Tokens};
 
@@ -200,6 +202,10 @@ pub struct LaceStyle {
     pub small_font_size: f32,
     /// Height of a one-line control (button, field, combo), px.
     pub control_height: f32,
+    /// Whether raised faces, popups and focused fields draw the modern
+    /// look's soft shadows and halo ([`lace_gpui::modern`]). On by default;
+    /// off paints flat.
+    pub elevation: bool,
 }
 
 impl Global for LaceStyle {}
@@ -227,9 +233,10 @@ impl LaceStyle {
             active,
             disabled,
             status: StatusColors { success: t.success, warning: t.warning, error: t.error, info: t.info },
-            control_radius: spec.button_radius.unwrap_or(spec.control_radius).max(0.0) as f32,
-            corner_radius: spec.corner_radius.max(0.0) as f32,
-            frame_radius: spec.frame_radius.unwrap_or(spec.control_radius).max(0.0) as f32,
+            // The modern floors: a theme may round further, never less.
+            control_radius: modern::control_radius(spec.button_radius.unwrap_or(spec.control_radius)) as f32,
+            corner_radius: modern::card_radius(spec.corner_radius) as f32,
+            frame_radius: modern::frame_radius(spec.frame_radius.unwrap_or(spec.control_radius)) as f32,
             scrollbar_width: scrollbar.extent(),
             scrollbar_rest: rules::EXPANDING_REST,
             scrollbar_grow_ms: 120.0,
@@ -243,8 +250,43 @@ impl LaceStyle {
             outline_level,
             font_size: 12.0,
             small_font_size: 11.0,
-            control_height: 24.0,
+            // Two px roomier than Fusion's 24: calmer rhythm, larger targets.
+            control_height: 26.0,
+            elevation: true,
         }
+    }
+
+    /// The soft drop shadows for `level`, or none when elevation is off.
+    pub fn shadows(&self, level: Elevation) -> Vec<BoxShadow> {
+        if !self.elevation {
+            return Vec::new();
+        }
+        modern::shadow(level, self.is_light)
+            .iter()
+            .map(|s| BoxShadow {
+                color: hsla(s.color),
+                offset: point(px(0.), px(s.offset_y)),
+                blur_radius: px(s.blur),
+                spread_radius: px(s.spread),
+                inset: false,
+            })
+            .collect()
+    }
+
+    /// The soft accent halo around a focused field, or none when elevation
+    /// is off. It sits outside the field's own focus outline, which keeps
+    /// its colour and contrast floor.
+    pub fn focus_halo(&self, s: State) -> Vec<BoxShadow> {
+        if !self.elevation || !s.enabled() {
+            return Vec::new();
+        }
+        vec![BoxShadow {
+            color: hsla(modern::focus_halo(self.pal(s).accent)),
+            offset: point(px(0.), px(0.)),
+            blur_radius: px(0.),
+            spread_radius: px(modern::FOCUS_HALO_SPREAD),
+            inset: false,
+        }]
     }
 
     /// LaceStyle for one of Lace's curated presets, by name.

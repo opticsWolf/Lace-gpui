@@ -268,6 +268,15 @@ impl ShadowSpec {
         self
     }
 
+    /// The modern look's soft card shadow ([`crate::modern::shadow`] at
+    /// [`Elevation::Card`](crate::modern::Elevation::Card), its ambient
+    /// layer) for a light or dark canvas.
+    pub fn modern(is_light: bool) -> Self {
+        let s = crate::modern::shadow(crate::modern::Elevation::Card, is_light)[1];
+        Self::new(crate::skin::hsla(s.color), point(px(0.), px(s.offset_y)), px(s.blur))
+            .spread(px(s.spread))
+    }
+
     fn to_box_shadow(self) -> BoxShadow {
         BoxShadow {
             color: self.color,

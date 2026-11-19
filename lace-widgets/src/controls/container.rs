@@ -4,13 +4,13 @@
 use std::rc::Rc;
 
 use gpui_kit::gpui::{
-    div, prelude::FluentBuilder, px, AnyElement, App, BoxShadow, Div, ElementId, InteractiveElement,
+    div, prelude::FluentBuilder, px, AnyElement, App, BoxShadow, Div, ElementId, FontWeight, InteractiveElement,
     IntoElement, ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 
 use super::interaction::{child_id, Interaction};
 use crate::glyph::{self, Dir};
-use crate::style::rules::{self, TAB_UNDERLINE};
+use crate::style::rules::{self, TAB_INDICATOR_INSET, TAB_UNDERLINE};
 use crate::style::{hsla, ActiveStyle, LaceStyle, State};
 
 type Pick = Rc<dyn Fn(usize, &mut Window, &mut App)>;
@@ -56,23 +56,29 @@ pub fn tab_div(style: &LaceStyle, s: State, pos: TabPosition) -> Div {
         .text_size(px(style.font_size))
         .text_color(hsla(t.text))
         .when_some(t.fill, |d, f| d.bg(hsla(f)));
-    // Round only the corners away from the pane.
-    let el = match pos {
-        TabPosition::North => el.rounded_t(r),
-        TabPosition::South => el.rounded_b(r),
-        TabPosition::West => el.rounded_l(r),
-        TabPosition::East => el.rounded_r(r),
-    };
+    // The hover wash is a free-standing rounded chip; the selected tab
+    // shows only its pill.
+    let el = el.rounded(r);
     let el = match pos {
         TabPosition::North | TabPosition::South => el.h(px(style.control_height + 4.0)).px(px(14.)),
         _ => el.w_full().py(px(10.)).px(px(6.)),
     };
-    let el = match (t.underline, pos) {
-        (Some(u), TabPosition::North) => el.border_b(px(TAB_UNDERLINE)).border_color(hsla(u)),
-        (Some(u), TabPosition::South) => el.border_t(px(TAB_UNDERLINE)).border_color(hsla(u)),
-        (Some(u), TabPosition::West) => el.border_r(px(TAB_UNDERLINE)).border_color(hsla(u)),
-        (Some(u), TabPosition::East) => el.border_l(px(TAB_UNDERLINE)).border_color(hsla(u)),
-        (None, _) => el,
+    // The selected tab's indicator: a rounded pill on the edge facing the
+    // pane, inset from the tab's ends.
+    let el = el.relative();
+    let el = match t.underline {
+        Some(u) => {
+            let (w, inset) = (px(TAB_UNDERLINE), px(TAB_INDICATOR_INSET));
+            let pill = div().absolute().bg(hsla(u)).rounded(w * 0.5);
+            let pill = match pos {
+                TabPosition::North => pill.bottom_0().left(inset).right(inset).h(w),
+                TabPosition::South => pill.top_0().left(inset).right(inset).h(w),
+                TabPosition::West => pill.right_0().top(inset).bottom(inset).w(w),
+                TabPosition::East => pill.left_0().top(inset).bottom(inset).w(w),
+            };
+            el.child(pill)
+        }
+        None => el,
     };
     match t.ring {
         Some(ring) => el.border(px(style.focus_width)).border_color(hsla(ring)).rounded(r),
@@ -208,14 +214,10 @@ impl RenderOnce for TabWidget {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let style = cx.lace().clone();
         let pos = self.bar.position;
-        let line = hsla(rules::frame_line(&style, State::NORMAL));
-        let pane = div()
+        let pane = frame_box(&style, State::NORMAL)
             .flex_1()
             .min_w_0()
             .min_h_0()
-            .border_1()
-            .border_color(line)
-            .rounded(px(style.frame_radius))
             .p(px(6.))
             .children(self.pane);
         let el = div().flex().size_full();
@@ -232,11 +234,13 @@ impl RenderOnce for TabWidget {
 // Group box, frames
 // ---------------------------------------------------------------------------
 
-/// A `QFrame` box: a rounded outline.
+/// A `QFrame` box: a rounded card — a faint fill lifted off the window
+/// ([`rules::card`]) and a border held at the theme's border floor.
 pub fn frame_box(style: &LaceStyle, s: State) -> Div {
     div()
+        .bg(hsla(rules::card(style, s)))
         .border_1()
-        .border_color(hsla(rules::frame_line(style, s)))
+        .border_color(hsla(rules::card_line(style, s)))
         .rounded(px(style.frame_radius))
 }
 
@@ -284,7 +288,7 @@ impl RenderOnce for GroupBox {
             .gap(px(4.))
             .text_size(px(style.font_size))
             .text_color(hsla(style.pal(s).window_text))
-            .when_some(self.title, |d, t| d.child(div().px(px(1.)).child(t)))
+            .when_some(self.title, |d, t| d.child(div().px(px(1.)).font_weight(FontWeight::SEMIBOLD).child(t)))
             .child(frame_box(&style, s).flex_1().min_h_0().p(px(10.)).flex().flex_col().gap(px(8.)).children(self.children))
     }
 }
@@ -409,7 +413,7 @@ impl RenderOnce for CollapsibleGroupBox {
             .child(glyph::glyph_box(14.0, 14.0, move |b, window, _| {
                 glyph::paint_chevron(window, b, dir, hsla(arrow), 0.0)
             }))
-            .child(div().flex_none().text_color(hsla(text)).child(self.title))
+            .child(div().flex_none().font_weight(FontWeight::SEMIBOLD).text_color(hsla(text)).child(self.title))
             .when(!open, |d| {
                 d.child(div().flex_1().ml(px(4.)).h(px(1.)).bg(hsla(rules::frame_line(&style, frame_state))))
             });
@@ -479,6 +483,7 @@ pub fn header_section(style: &LaceStyle, s: State, caption: SharedString, sort: 
         .border_r_1()
         .border_color(hsla(h.line))
         .text_size(px(style.font_size))
+        .font_weight(FontWeight::MEDIUM)
         .text_color(hsla(h.text))
         .overflow_hidden()
         .child(div().flex_1().min_w_0().overflow_hidden().whitespace_nowrap().child(caption))
@@ -517,6 +522,21 @@ pub fn item_row_div(style: &LaceStyle, s: State) -> Div {
     }
 }
 
+/// A popup's shadow: the modern [`Overlay`](crate::style::Elevation::Overlay)
+/// layers, or, with elevation off, Lace's single soft drop.
+pub fn popup_shadow(style: &LaceStyle) -> Vec<BoxShadow> {
+    if style.elevation {
+        return style.shadows(crate::style::Elevation::Overlay);
+    }
+    vec![BoxShadow {
+        color: gpui_kit::gpui::black().opacity(0.28),
+        offset: gpui_kit::gpui::point(px(0.), px(3.)),
+        blur_radius: px(10.),
+        spread_radius: px(0.),
+        inset: false,
+    }]
+}
+
 /// A popup panel (menus, combo lists): window fill, outline, soft shadow.
 pub fn popup_panel(style: &LaceStyle) -> Div {
     let (fill, line) = rules::popup(style, State::NORMAL);
@@ -528,13 +548,7 @@ pub fn popup_panel(style: &LaceStyle) -> Div {
         .border_1()
         .border_color(hsla(line))
         .rounded(px(style.popup_radius()))
-        .shadow(vec![BoxShadow {
-            color: gpui_kit::gpui::black().opacity(0.28),
-            offset: gpui_kit::gpui::point(px(0.), px(3.)),
-            blur_radius: px(10.),
-            spread_radius: px(0.),
-            inset: false,
-        }])
+        .shadow(popup_shadow(style))
         .text_size(px(style.font_size))
 }
 
@@ -725,6 +739,7 @@ pub fn tooltip(style: &LaceStyle, s: State, text: impl Into<SharedString>) -> Di
         .border_1()
         .border_color(hsla(line))
         .rounded(px(style.control_radius))
+        .shadow(style.shadows(crate::style::Elevation::Overlay))
         .text_size(px(style.font_size))
         .text_color(hsla(ink))
         .child(text.into())

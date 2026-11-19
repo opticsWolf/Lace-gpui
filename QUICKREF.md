@@ -83,6 +83,7 @@ let (area, skin) = GeometryDockSkin::dock_area("id", None, style, window, cx);
 | `.panel_radius(px)` | The pane radius; use `cx.theme().radius_lg` for the theme's own |
 | `.outline(OutlineStyle::themed(px))` or `OutlineStyle::new(color, px)` | The pane outline |
 | `.shadow(ShadowSpec::new(color, offset, blur).spread(px))` | A drop shadow |
+| `.shadow(ShadowSpec::modern(is_light))` | The modern look's soft card shadow |
 | `.glow(GlowSpec::new(color, blur).spread(px))` | A glow |
 | `.splitter(\|s\| s.thickness(px).length(SplitterLength::Percent(f) \| pixels(px) \| ..).cap(SplitterCap::Rounded).colors(SplitterColors::default().idle(..).hovered(..).pressed(..).dragging(..)))` | The splitter |
 
@@ -160,6 +161,9 @@ Mouse and keyboard:
 | `ProgressBar::fill(rgba)` | Paints the fill in your colour instead of the style's (enabled bars only) |
 | `Slider::on_drag(\|pressed, w, cx\| ..)` / `.selected(bool)` | Drag start/end hook; a fill that stays visible on a selected row |
 | `lace_widgets::style::install(style, cx)` | Swaps the widget style live |
+| `LaceStyle { elevation: false, .. }` | Paints flat: no raised-face, popup or focus-halo shadows (on by default) |
+| `style.shadows(Elevation::Raised \| Card \| Overlay)` / `style.focus_halo(state)` | The modern look's shadows as gpui `BoxShadow`s for your own widgets |
+| `lace_gpui::modern` | `CONTROL_RADIUS` 6, `FRAME_RADIUS` 8, `CARD_RADIUS` 10, `TAB_RADIUS` 6 floors; `shadow(level, is_light)`; `skin::elevation(level, cx)` |
 
 ## Item-view delegates (`lace_widgets::views::Delegate`)
 

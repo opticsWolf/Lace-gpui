@@ -853,7 +853,7 @@ impl Sidebars {
             .rounded(style.panel_radius)
             .border(style.panel_border_width)
             .border_color(if focused { style.panel_focus } else { style.panel_border })
-            .shadow_lg()
+            .shadow(crate::skin::elevation(crate::modern::Elevation::Overlay, cx))
             .on_hover(cx.listener(|this, hovered: &bool, window, cx| {
                 this.over_panel = *hovered;
                 if !*hovered {

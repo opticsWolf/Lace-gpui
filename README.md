@@ -33,6 +33,7 @@ See [QUICKREF.md](QUICKREF.md) for the API at a glance and
 | `engine` | `ThemeSpec` → `Tokens` derivation. Port of `build_theme` (`_DEPTH` steps, selection modes, `keep_tint`) | nothing |
 | `contrast` | The rulebook and its fixer. Port of `lace/theme_contrast.py` (`enforce`) | nothing |
 | `themes` | 37 curated presets in five groups (`ALL`, `GROUPS`, `by_name`) | nothing |
+| `modern` | The modern look both paint layers share: radius floors and soft elevation shadows, applied at paint time | nothing |
 | `skin` | The bridge: `apply("dracula", cx)` paints a running gpui-kit app and installs the dock styles | `gpui-kit` |
 | `base_style` | LaceStyle's flat widget layer over gpui-kit's stock widgets | `gpui-kit` |
 | `button` | `GlowButton`: theme-driven hover/press halos on stock buttons | `gpui-kit` |
@@ -230,8 +231,8 @@ Fields Lace doesn't model keep whatever the initialized theme already had.
 
 The non-colour knobs:
 
-- `radius` ← `control_radius`;
-- `radius_lg` ← `corner_radius`;
+- `radius` ← `control_radius`, floored at `modern::CONTROL_RADIUS` (6 px);
+- `radius_lg` ← `corner_radius`, floored at `modern::CARD_RADIUS` (10 px);
 - `scrollbar_mode` ← the spec's scrollbar choice;
 - `mode` ← `is_light`.
 
@@ -240,6 +241,29 @@ the dock globals. `skin::dock_chrome` picks gpui-kit's `PanelStyle`.
 
 LaceStyle's widget layer and its limits are described in
 [docs/lace-style-widgets.md](docs/lace-style-widgets.md).
+
+### The modern look
+
+The `modern` module departs from strict Lace parity in how tokens are
+*drawn*; the theme data and every contrast rule are unchanged:
+
+- **Radius floors.** Controls round to at least 6 px, frames 8 px, dock
+  cards and the sidebar panel 10 px, dock tabs 6 px. A theme may round
+  further, never less. `Tokens` keep Lace's own values.
+- **Elevation.** `modern::shadow(Elevation, is_light)` gives two soft shadow
+  layers per level (`Raised` faces, `Card`s, `Overlay`s), denser on dark
+  canvases. `skin::elevation(level, cx)` returns them as gpui shadows, and
+  `ShadowSpec::modern(is_light)` gives the card shadow for
+  `DockGeometryStyle::shadow`.
+- **Tabs.** The active tab is marked by a rounded pill inset from the tab's
+  ends, both in dock strips and in `lace-widgets`' `TabBar`.
+- **Widgets** (`lace-widgets`): raised faces cast a soft shadow
+  (`LaceStyle::elevation`, on by default), group boxes and tab panes are
+  filled cards, headers are flat with medium-weight captions, idle tab labels
+  are muted, focused fields get an accent halo outside their focus outline,
+  and controls are 26 px tall (was 24). Outlines, focus rings and labels
+  still meet the same `contrast` floors, which the tests check on all 37
+  themes.
 
 ## Tests
 

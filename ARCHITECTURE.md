@@ -65,7 +65,8 @@ point resolves a spec, builds tokens and then:
 
 1. **Writes the gpui-kit `Theme`.**
    - `apply_to_theme_color` maps about 125 `ThemeColor` fields.
-   - `apply_tokens` also sets the radii, scrollbar mode and light/dark mode.
+   - `apply_tokens` also sets the radii (through the `modern` floors),
+     scrollbar mode and light/dark mode.
 2. **Adds the widget layer**, if one was requested. With
    `WidgetStyle::LaceBase`, `BaseStyle` derives LaceStyle's flat outlines,
    state steps and focus ring from the same tokens and writes the ones
@@ -235,6 +236,11 @@ and changes only what gpui-kit's theme can express. The workbench example uses
   `DockGeometryStyle::default()` reproduces the stock look exactly.
 - **Parity is measured.** Paddings, colours and stripe widths come from PySide
   Lace's source and are checked against screenshots of the same theme.
+- **The modern look is one layer.** Where the drawing departs from Lace (radius
+  floors, soft elevation, inset tab pills, filled group cards), it does so
+  through `modern`, which both `lace-widgets` and the dock skin read. The
+  specs and `Tokens` stay Lace's, so the engine's parity tests and the
+  contrast rulebook are untouched; the new rules carry their own floor tests.
 - **Divergences are written down.** Wherever gpui-kit 0.8 cannot express
   something, the module doc and
   [docs/gpui-kit-0.8-feasibility.md](docs/gpui-kit-0.8-feasibility.md) say so.

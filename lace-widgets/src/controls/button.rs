@@ -29,6 +29,11 @@ pub fn apply_face<E: Styled>(el: E, face: &Face, style: &LaceStyle, radius: f32)
         Some(fill) => el.bg(hsla(fill)),
         None => el,
     };
+    let el = if face.raised {
+        el.shadow(style.shadows(crate::style::Elevation::Raised))
+    } else {
+        el
+    };
     if let Some(ring) = face.ring {
         el.border(px(style.focus_width)).border_color(hsla(ring))
     } else if let Some(line) = face.line {

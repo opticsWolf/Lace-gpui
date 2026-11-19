@@ -249,14 +249,31 @@ fn title_minimum(label: &str, icon: Pixels, factor: f32, window: &Window) -> Pix
     icon + full.min(stub * factor)
 }
 
-/// A ghost icon button with Lace's 3px hover rounding.
+/// A ghost icon button with the modern look's soft hover rounding
+/// ([`modern::CHROME_BUTTON_RADIUS`](crate::modern::CHROME_BUTTON_RADIUS)).
 pub(crate) fn chrome_button(id: impl Into<gpui_kit::gpui::ElementId>, icon: DockIcon, size: Pixels) -> Button {
     Button::new(id)
         .icon(icon)
         .with_size(size)
         .ghost()
-        .rounded(px(3.))
+        .rounded(px(crate::modern::CHROME_BUTTON_RADIUS as f32))
         .tab_stop(false)
+}
+
+/// The active tab's indicator: a rounded pill along the tab's top or
+/// bottom edge, inset from its ends by
+/// [`modern::INDICATOR_INSET`](crate::modern::INDICATOR_INSET).
+pub(crate) fn indicator_pill(top: bool, width: Pixels, color: Hsla) -> gpui_kit::gpui::Div {
+    let width = width.max(px(crate::modern::INDICATOR_MIN as f32));
+    let inset = px(crate::modern::INDICATOR_INSET as f32);
+    div()
+        .absolute()
+        .left(inset)
+        .right(inset)
+        .h(width)
+        .rounded(width * 0.5)
+        .bg(color)
+        .map(|this| if top { this.top_0() } else { this.bottom_0() })
 }
 
 /// Whether the group's displayed panel holds keyboard focus.
@@ -771,26 +788,10 @@ impl EdgeTabBar {
                     this.rounded_tl(corner)
                 })
                 .when(selected && edges.indicator == TabIndicator::Top, |this| {
-                    this.child(
-                        div()
-                            .absolute()
-                            .top_0()
-                            .left_0()
-                            .right_0()
-                            .h(bar)
-                            .bg(indicator_color),
-                    )
+                    this.child(indicator_pill(true, bar, indicator_color))
                 })
                 .when(selected && edges.indicator == TabIndicator::Bottom, |this| {
-                    this.child(
-                        div()
-                            .absolute()
-                            .bottom_0()
-                            .left_0()
-                            .right_0()
-                            .h(bar)
-                            .bg(indicator_color),
-                    )
+                    this.child(indicator_pill(false, bar, indicator_color))
                 })
                 // The title elides (`…`) as the tab shrinks.
                 .child(

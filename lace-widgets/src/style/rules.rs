@@ -42,6 +42,10 @@ pub struct Face {
     pub text: Rgba,
     /// The focus ring, drawn inside the face, when focused from the keyboard.
     pub ring: Option<Rgba>,
+    /// Whether the face stands raised and takes the soft
+    /// [`Elevation::Raised`](super::Elevation::Raised) shadow: a filled,
+    /// enabled face that is neither pressed nor checked (pressed in).
+    pub raised: bool,
 }
 
 /// `face_colors` plus the label colour and focus ring.
@@ -70,7 +74,8 @@ pub fn button_face(style: &LaceStyle, s: State, kind: ButtonKind) -> Face {
         (Some(fill), Some(line), pal.button_text)
     };
     let ring = (s.has_focus() && style.focus_width > 0.0).then(|| p::focus_ring(style, s));
-    Face { fill, line, text, ring }
+    let raised = fill.is_some() && kind != ButtonKind::Flat && s.enabled() && !s.pressed && !s.checked;
+    Face { fill, line, text, ring, raised }
 }
 
 /// The divider between a split button's face and its menu part.
@@ -184,6 +189,30 @@ pub fn frame_line(style: &LaceStyle, s: State) -> Rgba {
 /// A 1 px separation line on `surface` (`_containers._line`).
 pub fn line_on(style: &LaceStyle, s: State, surface: Rgba) -> Rgba {
     p::legible(style, s, p::stroke(style, s, surface), style.border_ratio(), None)
+}
+
+/// OKLCH lightness a dark theme's card lifts off the window.
+pub const CARD_LIFT: f64 = 0.025;
+/// Share of `Base` a light theme's card takes over the window.
+pub const CARD_BASE_MIX: f64 = 0.6;
+
+/// The fill of a group-box / tab-pane card: a faint lift off the window
+/// (lighter on dark themes, toward `Base` on light ones), so frames read as
+/// surfaces rather than outlines.
+pub fn card(style: &LaceStyle, s: State) -> Rgba {
+    let pal = style.pal(s);
+    if style.is_light {
+        p::mix(pal.window, pal.base, CARD_BASE_MIX)
+    } else {
+        p::step(pal.window, CARD_LIFT)
+    }
+}
+
+/// The outline of a card: the card's stroke at the border floor against
+/// the window it sits on.
+pub fn card_line(style: &LaceStyle, s: State) -> Rgba {
+    let fill = card(style, s);
+    p::legible(style, s, p::stroke(style, s, fill), style.border_ratio(), None)
 }
 
 // ---------------------------------------------------------------------------
@@ -300,7 +329,7 @@ pub fn knob(style: &LaceStyle, s: State) -> Face {
     let fill = p::state_fill(s, pal.button);
     let line = p::legible(style, s, p::stroke(style, s, fill), style.ui_ratio(), None);
     let ring = s.has_focus().then(|| p::focus_ring(style, s));
-    Face { fill: Some(fill), line: Some(line), text: pal.button_text, ring }
+    Face { fill: Some(fill), line: Some(line), text: pal.button_text, ring, raised: s.enabled() }
 }
 
 /// Slider tick and dial notch colour.
@@ -363,10 +392,10 @@ pub fn scroll_step(style: &LaceStyle, s: State, active: bool, at_end: bool) -> (
 // Containers (`_containers.py`)
 // ---------------------------------------------------------------------------
 
-/// Selected tab's accent underline, px.
-pub const TAB_UNDERLINE: f32 = 2.0;
-const TAB_ACTIVE_WASH: f64 = 0.12;
-const TAB_ACTIVE_HOVER_WASH: f64 = 0.18;
+/// Selected tab's accent indicator pill, px.
+pub const TAB_UNDERLINE: f32 = 3.0;
+/// Inset of the indicator pill from the tab's ends, px.
+pub const TAB_INDICATOR_INSET: f32 = lace_gpui::modern::INDICATOR_INSET as f32;
 const TAB_HOVER_STEP: f64 = 0.05;
 /// Hover wash of item-view rows: text over the surface.
 pub const HOVER_WASH: f64 = 0.06;
@@ -384,18 +413,15 @@ pub struct Tab {
     pub ring: Option<Rgba>,
 }
 
-/// A tab in state `s` (`selected` marks the current tab).
+/// A tab in state `s` (`selected` marks the current tab). The selected tab
+/// is marked by its accent pill and full-strength label; the others take
+/// muted labels (held to the muted floor) and a rounded hover wash.
 pub fn tab(style: &LaceStyle, s: State) -> Tab {
     let pal = style.pal(s);
     let window = pal.window;
     let hovered = s.active_hover();
-    let fill = if s.selected {
-        Some(p::mix(window, pal.accent, if hovered { TAB_ACTIVE_HOVER_WASH } else { TAB_ACTIVE_WASH }))
-    } else if hovered {
-        Some(p::step(window, TAB_HOVER_STEP))
-    } else {
-        None
-    };
+    let fill = hovered.then(|| p::step(window, TAB_HOVER_STEP));
+    let text = if s.selected || hovered || s.disabled { pal.window_text } else { p::muted(style, s) };
     let underline = s.selected.then(|| {
         if s.enabled() {
             p::legible(style, s, pal.accent, style.ui_ratio(), None)
@@ -404,7 +430,7 @@ pub fn tab(style: &LaceStyle, s: State) -> Tab {
         }
     });
     let ring = (s.has_focus() && style.focus_width > 0.0).then(|| p::focus_ring(style, s));
-    Tab { fill, underline, text: pal.window_text, ring }
+    Tab { fill, underline, text, ring }
 }
 
 /// A header section: fill, the bottom/separator line, and the sort arrow.
@@ -420,19 +446,20 @@ pub struct Header {
     pub arrow: Rgba,
 }
 
-/// A header section in state `s`.
+/// Share of `Text` a header section's resting fill takes over `Base`.
+pub const HEADER_WASH: f64 = 0.04;
+
+/// A header section in state `s`: flat, a faint wash over the view's own
+/// `Base` rather than a raised button face.
 pub fn header(style: &LaceStyle, s: State) -> Header {
     let pal = style.pal(s);
-    let fill = if s.active_hover() || s.pressed {
-        p::state_fill(s, pal.button)
-    } else {
-        pal.button
-    };
+    let rest = p::mix(pal.base, pal.text, HEADER_WASH);
+    let fill = if s.active_hover() || s.pressed { p::state_fill(s, rest) } else { rest };
     Header {
         fill,
         line: line_on(style, s, fill),
-        text: pal.button_text,
-        arrow: p::legible(style, s, pal.button_text, style.ui_ratio(), Some(pal.button)),
+        text: p::legible(style, s, pal.text, style.text_ratio(), Some(fill)),
+        arrow: p::legible(style, s, pal.text, style.ui_ratio(), Some(fill)),
     }
 }
 
@@ -503,7 +530,9 @@ pub const SPLITTER_GROW: f32 = 2.0;
 pub const SPLITTER_PAD: f32 = 3.0;
 /// Handle width: the grown grip plus its padding.
 pub const SPLITTER_WIDTH: f32 = SPLITTER_GRIP + SPLITTER_GROW + 2.0 * SPLITTER_PAD;
-const SPLITTER_REST_MIX: f64 = 0.28;
+/// Rest grip: window text over the window by this much (still held to the
+/// disabled floor, so the grip stays findable).
+const SPLITTER_REST_MIX: f64 = 0.18;
 
 /// A splitter grip: colour and thickness.
 pub fn splitter_grip(style: &LaceStyle, s: State) -> (Rgba, f32) {
@@ -599,6 +628,43 @@ mod tests {
         assert!(button_face(&st, State::focused(), ButtonKind::Normal).ring.is_some());
         let off = State { focused: true, disabled: true, ..State::NORMAL };
         assert!(button_face(&st, off, ButtonKind::Normal).ring.is_none());
+    }
+
+    #[test]
+    fn modern_rules_keep_the_contrast_floors() {
+        for st in styles() {
+            let win = st.active.window;
+            let r = contrast_ratio(card_line(&st, State::NORMAL), win);
+            assert!(r >= st.border_ratio() - 0.02, "{}: card outline {r:.2}", st.name);
+            let h = header(&st, State::NORMAL);
+            let r = contrast_ratio(h.text, h.fill);
+            assert!(r >= st.text_ratio() - 0.02, "{}: header caption {r:.2}", st.name);
+            let t = tab(&st, State::NORMAL);
+            let r = contrast_ratio(t.text, win);
+            assert!(r >= st.muted_ratio() - 0.02, "{}: idle tab label {r:.2}", st.name);
+            let sel = tab(&st, State::NORMAL.with_selected(true));
+            let r = contrast_ratio(sel.underline.unwrap(), win);
+            assert!(r >= st.ui_ratio() - 0.02, "{}: tab indicator {r:.2}", st.name);
+        }
+    }
+
+    #[test]
+    fn only_resting_filled_faces_are_raised() {
+        let st = LaceStyle::preset("light").unwrap();
+        assert!(button_face(&st, State::NORMAL, ButtonKind::Normal).raised);
+        assert!(button_face(&st, State::hover(), ButtonKind::Default).raised);
+        assert!(!button_face(&st, State::pressed(), ButtonKind::Normal).raised);
+        assert!(!button_face(&st, State::checked(), ButtonKind::Normal).raised);
+        assert!(!button_face(&st, State::disabled(), ButtonKind::Normal).raised);
+        assert!(!button_face(&st, State::hover(), ButtonKind::Flat).raised);
+    }
+
+    #[test]
+    fn modern_radius_floors_apply() {
+        for st in styles() {
+            assert!(st.control_radius >= lace_gpui::modern::CONTROL_RADIUS as f32, "{}", st.name);
+            assert!(st.frame_radius >= lace_gpui::modern::FRAME_RADIUS as f32, "{}", st.name);
+        }
     }
 
     #[test]

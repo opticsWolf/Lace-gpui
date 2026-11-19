@@ -288,8 +288,9 @@ pub fn apply_tokens(theme: &mut Theme, t: &Tokens) {
     // gpui-kit has one control-radius slot, and stock buttons read it
     // (`ButtonRounded::Medium`); the Lace button radius owns that slot, so a
     // theme override re-rounds every stock button with no widget code.
-    theme.radius = px(t.button_radius as f32);
-    theme.radius_lg = px(t.corner_radius as f32);
+    // Both through the modern floors: a theme may round further, never less.
+    theme.radius = px(crate::modern::control_radius(t.button_radius) as f32);
+    theme.radius_lg = px(crate::modern::card_radius(t.corner_radius) as f32);
     theme.scrollbar_mode = match t.scrollbar {
         Scrollbar::Thin => ScrollbarMode::Hover,
         Scrollbar::Expanding => ScrollbarMode::Scrolling,
@@ -416,14 +417,14 @@ pub fn tab_edges(t: &Tokens) -> crate::edge_tabs::TabEdgeStyle {
         indicator: t.tab_indicator_pos,
         indicator_width: px(t.tab_indicator_width as f32),
         indicator_color: hsla(t.tab_indicator),
-        radius: px(t.tab_radius as f32),
+        radius: px(crate::modern::tab_radius(t.tab_radius) as f32),
         height: px(t.title_height as f32),
         dimming: t.tab_dimming,
         outline_unfocused: t.tab_border_unfocused.map(hsla),
         below_title: t.border_below_title,
         frame_focus: hsla(t.focus_border_color),
         frame_width: px(t.border_width as f32),
-        frame_radius: px(t.corner_radius as f32),
+        frame_radius: px(crate::modern::card_radius(t.corner_radius) as f32),
         panel_bg: Some(hsla(t.panel_bg)),
     }
 }
@@ -446,14 +447,14 @@ pub fn sidebar_style(t: &Tokens) -> crate::sidebar::SidebarStyle {
         outline_active: hsla(t.sidebar_tab_border_active),
         outline_hover: hsla(t.sidebar_tab_border_hover),
         flat: t.sidebar_tab_flat,
-        tab_radius: px(t.tab_radius as f32),
+        tab_radius: px(crate::modern::tab_radius(t.tab_radius) as f32),
         indicator: hsla(t.sidebar_indicator),
         indicator_width: if outline > px(0.) { outline } else { px(3.) },
         panel_bg: hsla(t.sidepanel_bg),
         panel_border: hsla(t.sidepanel_border),
         panel_focus: hsla(t.sidepanel_focus_border),
         panel_border_width: px(t.border_width as f32),
-        panel_radius: px(t.corner_radius as f32),
+        panel_radius: px(crate::modern::card_radius(t.corner_radius) as f32),
         title_text: hsla(t.sidepanel_title_text),
         title_height: px(30.),
     }
@@ -510,6 +511,23 @@ pub fn theme_set_json() -> String {
     }
     out.push_str("]}");
     out
+}
+
+/// The modern look's drop shadows for `level` ([`crate::modern::shadow`]),
+/// for the light or dark canvas of the applied theme.
+pub fn elevation(level: crate::modern::Elevation, cx: &App) -> Vec<gpui_kit::gpui::BoxShadow> {
+    use gpui_kit::component::theme::ActiveTheme as _;
+    let is_light = !cx.theme().mode.is_dark();
+    crate::modern::shadow(level, is_light)
+        .iter()
+        .map(|s| gpui_kit::gpui::BoxShadow {
+            color: hsla(s.color),
+            offset: gpui_kit::gpui::point(px(0.), px(s.offset_y)),
+            blur_radius: px(s.blur),
+            spread_radius: px(s.spread),
+            inset: false,
+        })
+        .collect()
 }
 
 /// The scrollbar mapping, exposed for tests and callers that manage

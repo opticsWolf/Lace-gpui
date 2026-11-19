@@ -150,26 +150,10 @@ impl Render for FloatingPane {
                     .border_color(edges.outline_active)
             })
             .when(edges.indicator == TabIndicator::Top, |this| {
-                this.child(
-                    div()
-                        .absolute()
-                        .top_0()
-                        .left_0()
-                        .right_0()
-                        .h(bar)
-                        .bg(edges.indicator_color),
-                )
+                this.child(crate::edge_tabs::indicator_pill(true, bar, edges.indicator_color))
             })
             .when(edges.indicator == TabIndicator::Bottom, |this| {
-                this.child(
-                    div()
-                        .absolute()
-                        .bottom_0()
-                        .left_0()
-                        .right_0()
-                        .h(bar)
-                        .bg(edges.indicator_color),
-                )
+                this.child(crate::edge_tabs::indicator_pill(false, bar, edges.indicator_color))
             })
             .child(title);
 
@@ -187,7 +171,7 @@ impl Render for FloatingPane {
             .rounded(radius)
             .border_1()
             .border_color(overlay.frame)
-            .shadow_lg()
+            .shadow(crate::skin::elevation(crate::modern::Elevation::Overlay, cx))
             .child(
                 div()
                     .flex()

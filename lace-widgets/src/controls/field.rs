@@ -10,7 +10,7 @@ use std::rc::Rc;
 use gpui_kit::component::input::{Input, InputState, Textarea, TextareaState};
 use gpui_kit::component::Sizable;
 use gpui_kit::gpui::{
-    anchored, canvas, deferred, div, prelude::FluentBuilder, px, AnyElement, App, BoxShadow, Focusable,
+    anchored, canvas, deferred, div, prelude::FluentBuilder, px, AnyElement, App, Focusable,
     ElementId, Entity, InteractiveElement, IntoElement, ParentElement, RenderOnce, ScrollWheelEvent,
     SharedString, StatefulInteractiveElement, Styled, Window,
 };
@@ -38,6 +38,8 @@ pub fn field_div(style: &LaceStyle, s: State) -> gpui_kit::gpui::Div {
         .bg(hsla(f.fill))
         .border_1()
         .border_color(hsla(f.line.unwrap_or(f.fill)))
+        // A soft accent halo outside the focus outline.
+        .when(s.has_focus(), |d| d.shadow(style.focus_halo(s)))
         .text_size(px(style.font_size))
         .text_color(hsla(f.text))
         .overflow_hidden()
@@ -449,13 +451,7 @@ impl ComboBox {
                         .border_1()
                         .border_color(hsla(line))
                         .rounded(px(style.popup_radius()))
-                        .shadow(vec![BoxShadow {
-                            color: gpui_kit::gpui::black().opacity(0.28),
-                            offset: gpui_kit::gpui::point(px(0.), px(3.)),
-                            blur_radius: px(10.),
-                            spread_radius: px(0.),
-                            inset: false,
-                        }])
+                        .shadow(super::container::popup_shadow(&style))
                         .text_size(px(style.font_size))
                         .children(rows)
                         .on_mouse_down_out(move |_, _, cx| {
