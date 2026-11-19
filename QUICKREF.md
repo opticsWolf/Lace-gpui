@@ -157,6 +157,7 @@ Mouse and keyboard:
 | `lace_widgets::controls` | `PushButton`, checks and toggles, fields, ranges, containers, nav, status and chrome. Each widget paints from the installed `LaceStyle` |
 | `lace_widgets::controls::CollapsibleGroupBox` | `CollapsibleGroupBox::new("id", "Title").default_open(false).child(..)`: a group box that folds away from its title. A click, Space or Enter toggles it. `.open(bool)` + `.on_toggle(\|open, w, cx\| ..)` make it controlled |
 | `lace_widgets::controls::DynamicSlider` | `DynamicSlider::new("id", v).range(DynamicRange::new().percent(0.5).min_span(1.).limits(0., 1e3).step(0.).decimals(1)).show_limits(true).on_change(..)`: a slider whose limits follow the value (±50 % by default). The limits hold during a drag and re-centre on release |
+| `ProgressBar::fill(rgba)` | Paints the fill in your colour instead of the style's (enabled bars only) |
 | `Slider::on_drag(\|pressed, w, cx\| ..)` / `.selected(bool)` | Drag start/end hook; a fill that stays visible on a selected row |
 | `lace_widgets::style::install(style, cx)` | Swaps the widget style live |
 
@@ -175,7 +176,7 @@ Mouse and keyboard:
 | `Radio` | bool | A radio button; choosing a row clears the column in its sibling rows |
 | `slider(min, max, step, decimals)` | number | A slider dragged in place, with the value beside it |
 | `dynamic_slider(DynamicRange)` | number | A `DynamicSlider` in place, with the value beside it |
-| `Progress(max)` | number | A progress bar with a percentage |
+| `Progress(max)` | number | A progress bar with a percentage in one colour that reads on fill and track. The fill is the accent toned 10 % toward the theme (darker on dark themes, brighter on light) |
 | `button("label", \|node, w, cx\| ..)` | — | A push button in every row |
 | `custom(\|ctx, w, cx\| ..)` | any | Anything; `CellCtx` gives the node, column, value, selection and style |
 

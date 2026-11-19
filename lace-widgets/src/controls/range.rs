@@ -644,12 +644,13 @@ pub struct ProgressBar {
     thickness: f32,
     disabled: bool,
     animate: bool,
+    fill: Option<lace_gpui::color::Rgba>,
 }
 
 impl ProgressBar {
     /// A bar at `value` of 0..=100.
     pub fn new(value: f64) -> Self {
-        Self { value, min: 0.0, max: 100.0, busy: false, vertical: false, thickness: 8.0, disabled: false, animate: true }
+        Self { value, min: 0.0, max: 100.0, busy: false, vertical: false, thickness: 8.0, disabled: false, animate: true, fill: None }
     }
 
     /// Range.
@@ -686,6 +687,12 @@ impl ProgressBar {
     /// Disable.
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
+        self
+    }
+
+    /// Paint the fill in `c` instead of the style's range fill (enabled only).
+    pub fn fill(mut self, c: lace_gpui::color::Rgba) -> Self {
+        self.fill = Some(c);
         self
     }
 }
@@ -727,7 +734,11 @@ impl RenderOnce for ProgressBar {
                     return;
                 }
                 let bar = if me.vertical { rect(x0, y0 + a, w, z - a) } else { rect(x0 + a, y0, z - a, h) };
-                round_rect(window, bar, radius, hsla(rules::range_fill(&style, s)), None);
+                let fill = match me.fill {
+                    Some(c) if s.enabled() => c,
+                    _ => rules::range_fill(&style, s),
+                };
+                round_rect(window, bar, radius, hsla(fill), None);
             },
         )
         .size_full();

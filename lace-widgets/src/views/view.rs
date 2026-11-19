@@ -1065,7 +1065,6 @@ impl ItemView {
             }
         }
 
-        let inner_w = (w - 2.0 * CELL_PAD).max(0.0);
         let content: AnyElement = match (&spec.delegate, editing) {
             (Delegate::Text, true) => match &self.editor {
                 Some(e) => div().flex_1().h_full().child(LineEdit::new(ElementId::Name("cell-editor".into()), e).fill_with(editor_margin)).into_any_element(),
@@ -1201,25 +1200,23 @@ impl ItemView {
                 let label: SharedString = format!("{:.0}%", 100.0 * frac).into();
                 let h = (self.row_height - 8.0).max(4.0);
                 let ps = State { disabled: s.disabled, ..State::NORMAL };
-                let on_fill = hsla(crate::style::paint::on(style, ps, crate::style::paint::accent(style, ps)));
-                let text = |d: gpui_kit::gpui::Div| d.h(px(h)).flex().items_center().justify_center();
-                // Label in body text, then again in the on-accent colour,
-                // clipped to the filled part (Qt's two-tone chunk text).
+                let (fill, ink) = progress_colors(style, ps);
+                // One label colour that reads on both the fill and the track,
+                // so no clip edge can cut through the digits.
                 div()
                     .flex_1()
                     .relative()
                     .h(px(h))
-                    .child(ProgressBar::new(v).range(0.0, *max).thickness(h).disabled(s.disabled))
-                    .child(text(div().absolute().inset_0()).text_color(hsla(style.pal(ps).text)).child(label.clone()))
+                    .child(ProgressBar::new(v).range(0.0, *max).thickness(h).disabled(s.disabled).fill(fill))
                     .child(
                         div()
                             .absolute()
-                            .top_0()
-                            .left_0()
-                            .h(px(h))
-                            .w(px(inner_w * frac))
-                            .overflow_hidden()
-                            .child(text(div().w(px(inner_w))).text_color(on_fill).child(label)),
+                            .inset_0()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .text_color(hsla(ink))
+                            .child(label),
                     )
                     .into_any_element()
             }
@@ -1426,14 +1423,24 @@ impl Render for ItemView {
             .when(self.needs_vbar() && f32::from(max.y) > 0.5, |d| d.child(vbar))
             .child(
                 canvas(
-                    move |b, _, cx| {
+                    move |b, window, cx| {
                         let size = (f32::from(b.size.width), f32::from(b.size.height));
-                        let _ = measure.update(cx, |this, cx| {
-                            if (this.viewport.0 - size.0).abs() > 0.5 || (this.viewport.1 - size.1).abs() > 0.5 {
-                                this.viewport = size;
-                                cx.notify();
-                            }
-                        });
+                        let changed = measure
+                            .update(cx, |this, cx| {
+                                let changed =
+                                    (this.viewport.0 - size.0).abs() > 0.5 || (this.viewport.1 - size.1).abs() > 0.5;
+                                if changed {
+                                    this.viewport = size;
+                                    cx.notify();
+                                }
+                                changed
+                            })
+                            .unwrap_or(false);
+                        // A notify raised mid-draw is dropped; ask for the next
+                        // frame so the new column widths show without input.
+                        if changed {
+                            window.request_animation_frame();
+                        }
                     },
                     |_, _, _, _| {},
                 )
@@ -1514,4 +1521,32 @@ impl Render for ItemView {
             .children(hbar)
             .child(tracker)
     }
+}
+
+/// OKLCH lightness step that tones an embedded progress fill.
+const PROGRESS_TONE: f64 = 0.10;
+
+/// The toned fill of an embedded progress bar, and one label colour that
+/// reads on both that fill and the track.
+///
+/// The accent sinks 10 % toward a dark theme's background (darker) or a
+/// light theme's (brighter), flipping when that would push it past a
+/// usable lightness.
+fn progress_colors(style: &LaceStyle, s: State) -> (lace_gpui::color::Rgba, lace_gpui::color::Rgba) {
+    use lace_gpui::color;
+    let pal = style.pal(s);
+    let accent = crate::style::paint::accent(style, s);
+    let l = color::to_oklch(accent).0;
+    let mut dl = if color::is_dark(pal.window) { -PROGRESS_TONE } else { PROGRESS_TONE };
+    if !(0.25..=0.92).contains(&(l + dl)) {
+        dl = -dl;
+    }
+    let fill = color::step(accent, dl);
+    let track = rules::track(style, s);
+    let worst = |c| color::contrast_ratio(c, fill).min(color::contrast_ratio(c, track));
+    let ink = [pal.text, pal.highlighted_text]
+        .into_iter()
+        .max_by(|a, b| worst(*a).total_cmp(&worst(*b)))
+        .unwrap_or(pal.text);
+    (fill, ink)
 }
