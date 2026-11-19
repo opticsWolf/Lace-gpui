@@ -89,8 +89,12 @@ pub struct Slider {
     tick_interval: f64,
     disabled: bool,
     forced: Option<State>,
+    selected: bool,
     on_change: Option<Change>,
+    on_drag: Option<Drag>,
 }
+
+type Drag = Rc<dyn Fn(bool, &mut Window, &mut App)>;
 
 impl Slider {
     /// A horizontal slider on `value`, 0..=100.
@@ -107,14 +111,31 @@ impl Slider {
             tick_interval: 0.0,
             disabled: false,
             forced: None,
+            selected: false,
             on_change: None,
+            on_drag: None,
         }
+    }
+
+    /// Sitting on a selected item-view row: the fill takes the highlighted
+    /// text colour so it stays visible on the selection.
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
+        self
     }
 
     /// Range.
     pub fn range(mut self, min: f64, max: f64) -> Self {
         self.min = min;
         self.max = max;
+        self
+    }
+
+    /// Called with `true` when a press on the groove starts a drag and with
+    /// `false` when the button is released (`sliderPressed` /
+    /// `sliderReleased`).
+    pub fn on_drag(mut self, f: impl Fn(bool, &mut Window, &mut App) + 'static) -> Self {
+        self.on_drag = Some(Rc::new(f));
         self
     }
 
@@ -185,7 +206,7 @@ impl RenderOnce for Slider {
                 ..tracked
             }
         };
-        let s = State { hovered: false, pressed: false, ..tracked };
+        let s = State { hovered: false, pressed: false, selected: self.selected, ..tracked };
         let style = cx.lace().clone();
         let (value, min, max, step, page) = (self.value, self.min, self.max, self.step, self.page);
         let span = (max - min).max(f64::EPSILON);
@@ -195,6 +216,7 @@ impl RenderOnce for Slider {
         let interval = if self.tick_interval > 0.0 { self.tick_interval } else { page.max(step) };
         let thick = slider_thickness(ticks);
         let on_change = self.on_change.clone().filter(|_| !s.disabled && self.forced.is_none());
+        let on_drag = self.on_drag.clone().filter(|_| on_change.is_some());
         let drag = ui.clone();
 
         // Value at a pointer position along the groove.
@@ -282,12 +304,16 @@ impl RenderOnce for Slider {
                 if let Some(f) = on_change.clone() {
                     let down = drag.clone();
                     let f2 = f.clone();
+                    let pressed = on_drag.clone();
                     window.on_mouse_event(move |ev: &MouseDownEvent, phase, window, cx| {
                         if phase == DispatchPhase::Bubble && ev.button == MouseButton::Left && b.contains(&ev.position) {
                             down.update(cx, |u, cx| {
                                 u.dragging = true;
                                 cx.notify();
                             });
+                            if let Some(d) = &pressed {
+                                d(true, window, cx);
+                            }
                             let v = value_at(b, ev.position);
                             if v != value {
                                 f2(v, window, cx);
@@ -305,13 +331,21 @@ impl RenderOnce for Slider {
                     });
                 }
                 let up = drag.clone();
-                window.on_mouse_event(move |_: &MouseUpEvent, _, _window, cx| {
-                    up.update(cx, |u, cx| {
-                        if u.dragging {
+                let released = on_drag.clone();
+                window.on_mouse_event(move |_: &MouseUpEvent, _, window, cx| {
+                    let was = up.update(cx, |u, cx| {
+                        let was = u.dragging;
+                        if was {
                             u.dragging = false;
                             cx.notify();
                         }
+                        was
                     });
+                    if was {
+                        if let Some(d) = &released {
+                            d(false, window, cx);
+                        }
+                    }
                 });
             },
         )
@@ -347,6 +381,250 @@ impl RenderOnce for Slider {
             }
             None => el,
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Dynamic slider
+// ---------------------------------------------------------------------------
+
+/// How a [`DynamicSlider`] sets its limits around the value: a fraction of
+/// the value's magnitude below and above it, at least `min_span` wide, and
+/// never past the optional hard `limits`.
+///
+/// The default is -50 % / +50 %: on 200 the slider runs 100..=300.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DynamicRange {
+    /// Room below the value, as a fraction of `|value|`.
+    pub below: f64,
+    /// Room above the value, as a fraction of `|value|`.
+    pub above: f64,
+    /// The narrowest window, so a value at or near zero can still move.
+    pub min_span: f64,
+    /// Hard limits the window never crosses.
+    pub limits: Option<(f64, f64)>,
+    /// Step; 0 takes a hundredth of the window.
+    pub step: f64,
+    /// Decimals for the limit labels and a delegate's value text.
+    pub decimals: usize,
+}
+
+impl Default for DynamicRange {
+    fn default() -> Self {
+        Self { below: 0.5, above: 0.5, min_span: 1.0, limits: None, step: 0.0, decimals: 1 }
+    }
+}
+
+impl DynamicRange {
+    /// -50 % / +50 %, at least 1 wide, no hard limits.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The same fraction below and above the value (0.5 for ±50 %).
+    pub fn percent(mut self, fraction: f64) -> Self {
+        self.below = fraction.abs();
+        self.above = fraction.abs();
+        self
+    }
+
+    /// Different fractions below and above the value.
+    pub fn span(mut self, below: f64, above: f64) -> Self {
+        self.below = below.abs();
+        self.above = above.abs();
+        self
+    }
+
+    /// The narrowest window.
+    pub fn min_span(mut self, span: f64) -> Self {
+        self.min_span = span.abs();
+        self
+    }
+
+    /// Hard limits.
+    pub fn limits(mut self, min: f64, max: f64) -> Self {
+        self.limits = Some((min.min(max), min.max(max)));
+        self
+    }
+
+    /// A fixed step.
+    pub fn step(mut self, step: f64) -> Self {
+        self.step = step.abs();
+        self
+    }
+
+    /// Decimals shown.
+    pub fn decimals(mut self, decimals: usize) -> Self {
+        self.decimals = decimals;
+        self
+    }
+
+    /// The window around `value`.
+    pub fn window(&self, value: f64) -> (f64, f64) {
+        let mag = value.abs();
+        let (mut lo, mut hi) = (value - self.below * mag, value + self.above * mag);
+        if hi - lo < self.min_span {
+            // Widen around the value, keeping the below / above balance.
+            let total = self.below + self.above;
+            let share = if total > 0.0 { self.below / total } else { 0.5 };
+            lo = value - self.min_span * share;
+            hi = value + self.min_span * (1.0 - share);
+        }
+        if let Some((min, max)) = self.limits {
+            lo = lo.max(min);
+            hi = hi.min(max);
+        }
+        if hi <= lo {
+            hi = lo + f64::EPSILON.max(lo.abs() * 1e-9);
+        }
+        (lo, hi)
+    }
+
+    /// The step on a window: the fixed one, or a hundredth of it.
+    pub fn step_on(&self, (lo, hi): (f64, f64)) -> f64 {
+        if self.step > 0.0 {
+            self.step
+        } else {
+            ((hi - lo) / 100.0).max(f64::EPSILON)
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Track {
+    /// The value the window was last centred on.
+    anchor: f64,
+    lo: f64,
+    hi: f64,
+    dragging: bool,
+}
+
+/// A slider whose limits follow its value: by default it reaches 50 % below
+/// and 50 % above wherever the value settles, so large and small values
+/// both get a useful throw.
+///
+/// The limits hold still while the knob is dragged and re-centre on the new
+/// value when it is released (and after wheel or key steps), so one drag
+/// can move the value by up to the window and the next drag goes further.
+///
+/// ```ignore
+/// DynamicSlider::new("gain", self.gain)
+///     .range(DynamicRange::new().percent(0.25).limits(0., 1000.))
+///     .show_limits(true)
+///     .on_change(cx.listener(|this, v, _, _| this.gain = v))
+/// ```
+#[derive(IntoElement)]
+pub struct DynamicSlider {
+    id: ElementId,
+    value: f64,
+    range: DynamicRange,
+    show_limits: bool,
+    disabled: bool,
+    selected: bool,
+    on_change: Option<Change>,
+}
+
+impl DynamicSlider {
+    /// A dynamic slider on `value`, ±50 %.
+    pub fn new(id: impl Into<ElementId>, value: f64) -> Self {
+        Self {
+            id: id.into(),
+            value,
+            range: DynamicRange::default(),
+            show_limits: false,
+            disabled: false,
+            selected: false,
+            on_change: None,
+        }
+    }
+
+    /// Sitting on a selected item-view row (see [`Slider::selected`]).
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
+        self
+    }
+
+    /// How the limits follow the value.
+    pub fn range(mut self, range: DynamicRange) -> Self {
+        self.range = range;
+        self
+    }
+
+    /// Show the current limits at either end.
+    pub fn show_limits(mut self, on: bool) -> Self {
+        self.show_limits = on;
+        self
+    }
+
+    /// Disable.
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    /// Called with the new value while dragging or stepping.
+    pub fn on_change(mut self, f: impl Fn(f64, &mut Window, &mut App) + 'static) -> Self {
+        self.on_change = Some(Rc::new(f));
+        self
+    }
+}
+
+impl RenderOnce for DynamicSlider {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let range = self.range;
+        let value = self.value;
+        let track = window.use_keyed_state(child_id(&self.id, "window"), cx, move |_, _| {
+            let (lo, hi) = range.window(value);
+            Track { anchor: value, lo, hi, dragging: false }
+        });
+        // Re-centre whenever the value has moved and no drag holds the
+        // window: after a release, a wheel or key step, or a write from the
+        // app. A changed range re-centres too.
+        let t = *track.read(cx);
+        let settled = t.anchor == value && (t.lo, t.hi) == range.window(value);
+        let (lo, hi) = if t.dragging || settled {
+            (t.lo, t.hi)
+        } else {
+            let (lo, hi) = range.window(value);
+            track.update(cx, |t, _| {
+                t.anchor = value;
+                t.lo = lo;
+                t.hi = hi;
+            });
+            (lo, hi)
+        };
+        let step = range.step_on((lo, hi));
+
+        let mut slider = Slider::new(self.id.clone(), value.clamp(lo, hi))
+            .range(lo, hi)
+            .steps(step, step * 10.0)
+            .selected(self.selected)
+            .disabled(self.disabled);
+        if let Some(f) = self.on_change {
+            let held = track.clone();
+            slider = slider.on_change(move |v, window, cx| f(v, window, cx)).on_drag(move |on, _, cx| {
+                held.update(cx, |t, cx| {
+                    t.dragging = on;
+                    cx.notify();
+                });
+            });
+        }
+        if !self.show_limits {
+            return div().w_full().child(slider);
+        }
+        let style = cx.lace().clone();
+        let muted = hsla(crate::style::paint::muted(&style, State::NORMAL.with_disabled(self.disabled)));
+        let label = |v: f64| format!("{v:.*}", range.decimals);
+        div()
+            .w_full()
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .text_size(px(style.font_size - 1.0))
+            .text_color(muted)
+            .child(div().flex_none().child(label(lo)))
+            .child(div().flex_1().min_w_0().child(slider))
+            .child(div().flex_none().child(label(hi)))
     }
 }
 
@@ -676,5 +954,43 @@ impl RenderOnce for Dial {
             }
             None => el,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DynamicRange;
+
+    #[test]
+    fn default_window_is_half_below_and_above() {
+        assert_eq!(DynamicRange::new().window(200.0), (100.0, 300.0));
+        assert_eq!(DynamicRange::new().window(-40.0), (-60.0, -20.0));
+    }
+
+    #[test]
+    fn spans_are_adjustable() {
+        assert_eq!(DynamicRange::new().percent(0.25).window(100.0), (75.0, 125.0));
+        assert_eq!(DynamicRange::new().span(0.1, 1.0).window(10.0), (9.0, 20.0));
+    }
+
+    #[test]
+    fn zero_still_gets_the_minimum_span() {
+        assert_eq!(DynamicRange::new().window(0.0), (-0.5, 0.5));
+        assert_eq!(DynamicRange::new().span(0.0, 1.0).min_span(4.0).window(0.0), (0.0, 4.0));
+    }
+
+    #[test]
+    fn hard_limits_clip_the_window() {
+        assert_eq!(DynamicRange::new().limits(0.0, 250.0).window(200.0), (100.0, 250.0));
+        let (lo, hi) = DynamicRange::new().limits(0.0, 10.0).window(0.0);
+        assert_eq!(lo, 0.0);
+        assert!(hi > lo);
+    }
+
+    #[test]
+    fn auto_step_is_a_hundredth_of_the_window() {
+        let r = DynamicRange::new();
+        assert_eq!(r.step_on(r.window(200.0)), 2.0);
+        assert_eq!(r.step(5.0).step_on((0.0, 1000.0)), 5.0);
     }
 }

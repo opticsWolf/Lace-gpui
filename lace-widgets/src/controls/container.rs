@@ -8,7 +8,7 @@ use gpui_kit::gpui::{
     IntoElement, ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 
-use super::interaction::Interaction;
+use super::interaction::{child_id, Interaction};
 use crate::glyph::{self, Dir};
 use crate::style::rules::{self, TAB_UNDERLINE};
 use crate::style::{hsla, ActiveStyle, LaceStyle, State};
@@ -286,6 +286,167 @@ impl RenderOnce for GroupBox {
             .text_color(hsla(style.pal(s).window_text))
             .when_some(self.title, |d, t| d.child(div().px(px(1.)).child(t)))
             .child(frame_box(&style, s).flex_1().min_h_0().p(px(10.)).flex().flex_col().gap(px(8.)).children(self.children))
+    }
+}
+
+type Toggle = Rc<dyn Fn(bool, &mut Window, &mut App)>;
+
+/// A `QGroupBox` that folds away: a chevron and title over a rounded frame.
+/// Clicking the title, or Space / Enter while it has focus, opens and closes
+/// the box.
+///
+/// Open, it is a [`GroupBox`] with a chevron before the title. Closed, the
+/// content and its frame go, and a rule runs on from the title, so a
+/// column of folded boxes still reads as sections. Unlike [`GroupBox`] it
+/// keeps its natural height: a box that folds should give its room back.
+///
+/// The open state lives with the widget (keyed by its id) unless
+/// [`open`](Self::open) pins it; [`on_toggle`](Self::on_toggle) hears every
+/// change either way.
+///
+/// ```ignore
+/// CollapsibleGroupBox::new("advanced", "Advanced")
+///     .default_open(false)
+///     .child(CheckBox::new("wrap", "Wrap lines"))
+/// ```
+#[derive(IntoElement)]
+pub struct CollapsibleGroupBox {
+    id: ElementId,
+    title: SharedString,
+    default_open: bool,
+    open: Option<bool>,
+    disabled: bool,
+    forced: Option<State>,
+    on_toggle: Option<Toggle>,
+    children: Vec<AnyElement>,
+}
+
+impl CollapsibleGroupBox {
+    /// A box titled `title`, open until the user folds it.
+    pub fn new(id: impl Into<ElementId>, title: impl Into<SharedString>) -> Self {
+        Self {
+            id: id.into(),
+            title: title.into(),
+            default_open: true,
+            open: None,
+            disabled: false,
+            forced: None,
+            on_toggle: None,
+            children: Vec::new(),
+        }
+    }
+
+    /// Whether the box starts open (ignored once it has been shown, and when
+    /// [`open`](Self::open) pins the state).
+    pub fn default_open(mut self, open: bool) -> Self {
+        self.default_open = open;
+        self
+    }
+
+    /// Pin the open state: the box shows `open` and only reports clicks
+    /// through [`on_toggle`](Self::on_toggle).
+    pub fn open(mut self, open: bool) -> Self {
+        self.open = Some(open);
+        self
+    }
+
+    /// Disable (greys the title and frame; the box no longer folds).
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    /// Paint the title row in `state` (gallery rendering).
+    pub fn state(mut self, state: State) -> Self {
+        self.forced = Some(state);
+        self
+    }
+
+    /// Called with the new open state whenever the user folds or unfolds it.
+    pub fn on_toggle(mut self, f: impl Fn(bool, &mut Window, &mut App) + 'static) -> Self {
+        self.on_toggle = Some(Rc::new(f));
+        self
+    }
+}
+
+impl ParentElement for CollapsibleGroupBox {
+    fn extend(&mut self, elements: impl IntoIterator<Item = AnyElement>) {
+        self.children.extend(elements);
+    }
+}
+
+impl RenderOnce for CollapsibleGroupBox {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let style = cx.lace().clone();
+        let header_id = child_id(&self.id, "header");
+        let default_open = self.default_open;
+        let kept = window.use_keyed_state(child_id(&self.id, "open"), cx, move |_, _| default_open);
+        let open = self.open.unwrap_or(*kept.read(cx));
+
+        let ix = Interaction::new(header_id.clone(), window, cx)
+            .focusable(&header_id, window, cx)
+            .force(self.forced);
+        let s = ix.state(window, cx).with_disabled(self.disabled);
+        let frame_state = State::NORMAL.with_disabled(self.disabled);
+        let text = style.pal(s).window_text;
+        // The chevron sits back until the title row is pointed at, as the
+        // tree's branch chevron does against its row.
+        let arrow = if s.hovered || s.pressed || s.has_focus() { text } else { crate::style::paint::muted(&style, s) };
+        let ring = s.has_focus().then(|| crate::style::paint::focus_ring(&style, s));
+        let dir = if open { Dir::Down } else { Dir::Right };
+
+        let header = div()
+            .id(header_id)
+            .flex()
+            .items_center()
+            .gap(px(4.))
+            .h(px(style.font_size + 8.0))
+            .pr(px(4.))
+            .rounded(px(style.control_radius))
+            .border_1()
+            .border_color(ring.map_or(gpui_kit::gpui::transparent_black(), hsla))
+            .when(!self.disabled, |d| d.cursor_pointer())
+            .child(glyph::glyph_box(14.0, 14.0, move |b, window, _| {
+                glyph::paint_chevron(window, b, dir, hsla(arrow), 0.0)
+            }))
+            .child(div().flex_none().text_color(hsla(text)).child(self.title))
+            .when(!open, |d| {
+                d.child(div().flex_1().ml(px(4.)).h(px(1.)).bg(hsla(rules::frame_line(&style, frame_state))))
+            });
+        let header = ix.bind(header, self.disabled);
+        let header = if self.disabled {
+            header
+        } else {
+            let kept_click = kept.clone();
+            let pinned = self.open.is_some();
+            let report = self.on_toggle.clone();
+            // gpui raises the click for Space and Enter on the focused header
+            // too (on key-up), so no key handler of our own: one would fold
+            // the box twice.
+            header.on_click(move |_, window, cx| {
+                let next = !open;
+                if !pinned {
+                    kept_click.update(cx, |o, cx| {
+                        *o = next;
+                        cx.notify();
+                    });
+                }
+                if let Some(f) = &report {
+                    f(next, window, cx);
+                }
+            })
+        };
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(4.))
+            .text_size(px(style.font_size))
+            .text_color(hsla(style.pal(frame_state).window_text))
+            .child(header)
+            .when(open, |d| {
+                d.child(frame_box(&style, frame_state).p(px(10.)).flex().flex_col().gap(px(8.)).children(self.children))
+            })
     }
 }
 

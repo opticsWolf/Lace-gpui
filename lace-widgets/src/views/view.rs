@@ -29,8 +29,8 @@ use gpui_kit::gpui::{
 
 use super::model::{ItemModel, ModelEvent, NodeId, Value};
 use crate::controls::{
-    check_indicator, header_section, item_row_div, ComboBox, Interaction, LineEdit, Margin, ProgressBar,
-    PushButton, Scrollbar, Sort, SpinBox,
+    check_indicator, header_section, item_row_div, radio_indicator, ComboBox, DynamicRange, DynamicSlider,
+    Interaction, LineEdit, Margin, ProgressBar, PushButton, Scrollbar, Slider, Sort, SpinBox, Switch,
 };
 use crate::glyph::{self, Dir};
 use crate::style::rules;
@@ -140,6 +140,28 @@ pub enum Delegate {
     Choice(Rc<[SharedString]>),
     /// A flag shown as a check box, toggled in place.
     Check,
+    /// A flag shown as a switch, toggled in place.
+    Switch,
+    /// A flag shown as a checkable push button labelled `label`, toggled in
+    /// place.
+    Toggle(SharedString),
+    /// One flag per sibling group shown as radio buttons: choosing a row
+    /// sets it and clears the column in the rows that share its parent.
+    Radio,
+    /// A number dragged on a slider in place, its value beside it.
+    Slider {
+        /// Minimum.
+        min: f64,
+        /// Maximum.
+        max: f64,
+        /// Step.
+        step: f64,
+        /// Decimals shown.
+        decimals: usize,
+    },
+    /// A number dragged on a [`DynamicSlider`] in place: its limits follow
+    /// the value (±50 % by default).
+    DynamicSlider(DynamicRange),
     /// A progress bar over `0..=max`.
     Progress(f64),
     /// A button in every row, labelled `label`.
@@ -157,6 +179,21 @@ impl Delegate {
     /// A choice editor.
     pub fn choice(choices: impl IntoIterator<Item = impl Into<SharedString>>) -> Self {
         Delegate::Choice(choices.into_iter().map(Into::into).collect())
+    }
+
+    /// A toggle button labelled `label`.
+    pub fn toggle(label: impl Into<SharedString>) -> Self {
+        Delegate::Toggle(label.into())
+    }
+
+    /// A slider over `min..=max`.
+    pub fn slider(min: f64, max: f64, step: f64, decimals: usize) -> Self {
+        Delegate::Slider { min, max, step, decimals }
+    }
+
+    /// A slider whose limits follow the value.
+    pub fn dynamic_slider(range: DynamicRange) -> Self {
+        Delegate::DynamicSlider(range)
     }
 
     /// A button.
@@ -712,6 +749,55 @@ impl ItemView {
         });
     }
 
+    /// Write a number from a slider, keeping an integer cell an integer.
+    fn edit_number(&mut self, id: NodeId, column: usize, v: f64, cx: &mut Context<Self>) {
+        let old = self.model.read(cx).value(id, column);
+        let nv = if matches!(old, Value::Int(_)) { Value::Int(v.round() as i64) } else { Value::Float(v) };
+        self.edit_cell(id, column, nv, cx);
+    }
+
+    /// Set `column` on `id` and clear it on the rows sharing its parent: a
+    /// radio group per sibling set.
+    fn choose_radio(&mut self, id: NodeId, column: usize, cx: &mut Context<Self>) {
+        let siblings: Vec<NodeId> = {
+            let m = self.model.read(cx);
+            let parent = m.node(id).and_then(|n| n.parent);
+            m.children(parent).to_vec()
+        };
+        for other in siblings {
+            if other != id && self.model.read(cx).value(other, column).as_bool() {
+                self.edit_cell(other, column, Value::Bool(false), cx);
+            }
+        }
+        self.edit_cell(id, column, Value::Bool(true), cx);
+    }
+
+    /// A per-cell element id.
+    fn cell_id(&self, kind: &str, column: usize, id: NodeId) -> ElementId {
+        ElementId::NamedInteger(SharedString::from(format!("{}-{kind}{column}", self.id_name())), id as u64)
+    }
+
+    /// A slider delegate: the slider, then the value right-aligned.
+    fn slider_cell(&self, slider: impl IntoElement, text: SharedString, style: &LaceStyle) -> AnyElement {
+        div()
+            .flex_1()
+            .min_w_0()
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .child(div().flex_1().min_w_0().child(slider))
+            .child(
+                div()
+                    .flex_none()
+                    .min_w(px(style.font_size * 2.5))
+                    .flex()
+                    .justify_end()
+                    .whitespace_nowrap()
+                    .child(text),
+            )
+            .into_any_element()
+    }
+
     fn can_edit(&self, id: NodeId, column: usize, cx: &App) -> bool {
         let editable = self.model.read(cx).node(id).is_some_and(|n| n.enabled && n.editable);
         editable && self.column_spec(column).delegate.editable()
@@ -909,7 +995,12 @@ impl ItemView {
         let (id, ix) = (r.id, r.ix);
         let editing = self.editing == Some((id, c));
         let align = match spec.align {
-            Align::Auto if value.is_number() || matches!(spec.delegate, Delegate::Number { .. }) => Align::Right,
+            Align::Auto
+                if (value.is_number() || matches!(spec.delegate, Delegate::Number { .. }))
+                    && !matches!(spec.delegate, Delegate::Slider { .. } | Delegate::DynamicSlider(_)) =>
+            {
+                Align::Right
+            }
             Align::Auto => Align::Left,
             a => a,
         };
@@ -1030,6 +1121,79 @@ impl ItemView {
                         }))
                     })
                     .into_any_element()
+            }
+            (Delegate::Switch, _) => {
+                let on = value.as_bool();
+                div()
+                    .flex_1()
+                    .flex()
+                    .justify_center()
+                    .child(
+                        Switch::new(self.cell_id("sw", c, id))
+                            .checked(on)
+                            .disabled(s.disabled || !r.editable)
+                            .on_change(cx.processor(move |this, v: bool, _, cx| this.edit_cell(id, c, Value::Bool(v), cx))),
+                    )
+                    .into_any_element()
+            }
+            (Delegate::Toggle(label), _) => {
+                let on = value.as_bool();
+                let view = cx.entity().downgrade();
+                div()
+                    .flex_1()
+                    .h_full()
+                    .child(
+                        PushButton::new(self.cell_id("tg", c, id), label.clone())
+                            .checked(on)
+                            .fill_with(button_margin)
+                            .disabled(s.disabled || !r.editable)
+                            .on_click(move |_, cx| {
+                                view.update(cx, |this, cx| this.edit_cell(id, c, Value::Bool(!on), cx)).ok();
+                            }),
+                    )
+                    .into_any_element()
+            }
+            (Delegate::Radio, _) => {
+                let on = value.as_bool();
+                let cs = State { checked: on, disabled: s.disabled || !r.editable, ..State::NORMAL };
+                div()
+                    .id(self.cell_id("rd", c, id))
+                    .flex_1()
+                    .flex()
+                    .justify_center()
+                    .child(radio_indicator(style, cs, crate::controls::check::INDICATOR))
+                    .when(r.enabled && r.editable, |d| {
+                        d.on_mouse_down(MouseButton::Left, cx.listener(move |this, _, _, cx| {
+                            cx.stop_propagation();
+                            this.choose_radio(id, c, cx);
+                        }))
+                    })
+                    .into_any_element()
+            }
+            (Delegate::Slider { min, max, step, decimals }, _) => {
+                let v = value.as_f64().unwrap_or(*min);
+                self.slider_cell(
+                    Slider::new(self.cell_id("sl", c, id), v)
+                        .range(*min, *max)
+                        .steps(*step, *step * 10.0)
+                        .selected(s.selected)
+                        .disabled(s.disabled || !r.editable)
+                        .on_change(cx.processor(move |this, v: f64, _, cx| this.edit_number(id, c, v, cx))),
+                    value.display(Some(*decimals)),
+                    style,
+                )
+            }
+            (Delegate::DynamicSlider(range), _) => {
+                let v = value.as_f64().unwrap_or(0.0);
+                self.slider_cell(
+                    DynamicSlider::new(self.cell_id("ds", c, id), v)
+                        .range(*range)
+                        .selected(s.selected)
+                        .disabled(s.disabled || !r.editable)
+                        .on_change(cx.processor(move |this, v: f64, _, cx| this.edit_number(id, c, v, cx))),
+                    value.display(Some(range.decimals)),
+                    style,
+                )
             }
             (Delegate::Progress(max), _) => {
                 let v = value.as_f64().unwrap_or(0.0);

@@ -22,14 +22,14 @@ pub use button::{apply_face, face_div, measure_text, ButtonRow, FoldOrder, Icon,
 pub use chrome::{frame_line, size_grip, splitter_grip, toolbar_handle, toolbar_separator, Scrollbar, Splitter};
 pub use container::{
     frame_box, header_section, item_row_div, menu_separator, popup_panel, tab_div, tool_box_tab, tooltip,
-    GroupBox, MenuBarItem, MenuItem, Sort, TabBar, TabClose, TabPosition, TabWidget, ToolBox,
+    CollapsibleGroupBox, GroupBox, MenuBarItem, MenuItem, Sort, TabBar, TabClose, TabPosition, TabWidget, ToolBox,
 };
 pub use check::{check_indicator, radio_indicator, CheckBox, CheckState, RadioButton};
 pub use field::{field_div, ComboBox, LineEdit, SpinBox, TextEdit};
 pub use interaction::{child_id, Interaction};
 pub use margin::Margin;
 pub use nav::{Breadcrumb, Pagination, Stepper};
-pub use range::{round_rect, Dial, ProgressBar, Slider, Ticks};
+pub use range::{round_rect, Dial, DynamicRange, DynamicSlider, ProgressBar, Slider, Ticks};
 pub use status::{Alert, Avatar, Badge, Link, ProgressRing, Separator, Skeleton, Spinner, Tag};
 pub use toggle::{nth_id, Rating, Segmented, Switch};
 pub use crate::style::tones::Tone;

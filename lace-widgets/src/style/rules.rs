@@ -278,7 +278,9 @@ pub fn track(style: &LaceStyle, s: State) -> Rgba {
 pub fn range_fill(style: &LaceStyle, s: State) -> Rgba {
     let pal = style.pal(s);
     if s.enabled() {
-        return pal.accent;
+        // On a selected item-view row the accent is the row's own fill, so
+        // the fill takes the highlighted text colour instead.
+        return if s.selected { pal.highlighted_text } else { pal.accent };
     }
     let window = pal.window;
     let track = p::legible(style, s, p::mix(window, pal.text, TRACK_MIX), p::DISABLED_RATIO, None);

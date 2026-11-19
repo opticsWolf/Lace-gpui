@@ -155,7 +155,31 @@ Mouse and keyboard:
 | `button::GlowButton` | `Button::new(..).primary().glow("id", disabled, window, cx)` adds hover/press halos. `.glow_hover(..)` adds only the hover halo, with no wrapper |
 | `base_style::BaseStyle` | `from_tokens(&t)` / `from_spec(&spec, &t)`, `.with_depth_scale(f)`, `.apply(&mut theme, &t)` |
 | `lace_widgets::controls` | `PushButton`, checks and toggles, fields, ranges, containers, nav, status and chrome. Each widget paints from the installed `LaceStyle` |
+| `lace_widgets::controls::CollapsibleGroupBox` | `CollapsibleGroupBox::new("id", "Title").default_open(false).child(..)`: a group box that folds away from its title. A click, Space or Enter toggles it. `.open(bool)` + `.on_toggle(\|open, w, cx\| ..)` make it controlled |
+| `lace_widgets::controls::DynamicSlider` | `DynamicSlider::new("id", v).range(DynamicRange::new().percent(0.5).min_span(1.).limits(0., 1e3).step(0.).decimals(1)).show_limits(true).on_change(..)`: a slider whose limits follow the value (±50 % by default). The limits hold during a drag and re-centre on release |
+| `Slider::on_drag(\|pressed, w, cx\| ..)` / `.selected(bool)` | Drag start/end hook; a fill that stays visible on a selected row |
 | `lace_widgets::style::install(style, cx)` | Swaps the widget style live |
+
+## Item-view delegates (`lace_widgets::views::Delegate`)
+
+`ItemView::new(&model, Mode::Table, cx).column(ix, Column::fixed(w).delegate(..))`
+
+| Delegate | Cell value | Shows / edits |
+|---|---|---|
+| `Text` (default) / `ReadOnly` | any | Text; a line edit on double-click or F2 / never edited |
+| `number(min, max, step, decimals)` | number | A spin box editor |
+| `choice([..])` | text | A combo box editor |
+| `Check` | bool | A check box, toggled in place |
+| `Switch` | bool | A switch, toggled in place |
+| `toggle("label")` | bool | A checkable push button, toggled in place |
+| `Radio` | bool | A radio button; choosing a row clears the column in its sibling rows |
+| `slider(min, max, step, decimals)` | number | A slider dragged in place, with the value beside it |
+| `dynamic_slider(DynamicRange)` | number | A `DynamicSlider` in place, with the value beside it |
+| `Progress(max)` | number | A progress bar with a percentage |
+| `button("label", \|node, w, cx\| ..)` | — | A push button in every row |
+| `custom(\|ctx, w, cx\| ..)` | any | Anything; `CellCtx` gives the node, column, value, selection and style |
+
+The slider delegates keep an integer cell an integer. Every in-place edit emits `ModelEvent::Edited`.
 
 ## Commands
 

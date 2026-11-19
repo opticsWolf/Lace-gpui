@@ -41,6 +41,7 @@ use lace_widgets::controls as lw;
 use lace_widgets::controls::{CheckState, Tone};
 use lace_widgets::glyph::{self, Dir};
 use lace_widgets::style::{hsla, rules, ActiveStyle, LaceStyle, State};
+use lace_widgets::controls::DynamicRange;
 use lace_widgets::views::{Column, Delegate, ItemModel, ItemView, Mode, SelectionMode, Value};
 
 const THEMES: &[&lace_gpui::engine::ThemeSpec] = &lace_gpui::themes::ALL;
@@ -444,6 +445,7 @@ struct Controls {
     combo: usize,
     spins: [f64; 2],
     sliders: [f64; 2],
+    dynamic: f64,
     line: Entity<InputState>,
     password: Entity<InputState>,
     editable: Entity<InputState>,
@@ -464,6 +466,7 @@ impl Controls {
             combo: 0,
             spins: [42.0, 0.5],
             sliders: [40.0, 70.0],
+            dynamic: 250.0,
             line: input(window, cx, "Line edit"),
             password: cx.new(|cx| InputState::new(window, cx).masked(true).default_value("secret")),
             editable: input(window, cx, "Editable"),
@@ -611,6 +614,12 @@ impl Render for Controls {
                         .on_change(on(&w, |c: &mut Controls, v: f64, _, _| c.sliders[1] = v)),
                 )
                 .child(lw::Slider::new("c-sl2", 30.0).disabled(true))
+                .child(
+                    lw::DynamicSlider::new("c-dyn", self.dynamic)
+                        .range(DynamicRange::new().decimals(0))
+                        .show_limits(true)
+                        .on_change(on(&w, |c: &mut Controls, v: f64, _, _| c.dynamic = v)),
+                )
                 .child(lw::ProgressBar::new(pct))
                 .child(lw::ProgressBar::new(0.0).busy())
                 .child(
@@ -659,18 +668,33 @@ impl Data {
                 Value::Int((i * 37 % 100) as i64),
                 Value::from(LEVELS[i % 3]),
                 Value::Bool(i % 4 == 0),
+                Value::Int((i * 29 % 101) as i64),
+                Value::Float(0.5 * (1 + i * 53 % 997) as f64),
+                Value::Bool(i % 3 != 0),
+                Value::Bool(i % 5 == 0),
+                Value::Bool(i == 2),
                 Value::Float((i * 13 % 101) as f64),
             ]
         });
-        let model = cx.new(|_| ItemModel::table(["Name", "Qty", "Level", "Done", "Progress", "Action"], rows));
+        let model = cx.new(|_| {
+            ItemModel::table(
+                ["Name", "Qty", "Level", "Done", "Gain", "Scale (±50 %)", "Live", "Pin", "Primary", "Progress", "Action"],
+                rows,
+            )
+        });
         let table = cx.new(|cx| {
             ItemView::new(&model, Mode::Table, cx)
                 .column(0, Column::interactive(110.))
                 .column(1, Column::interactive(64.).delegate(Delegate::number(0., 100., 1., 0)))
                 .column(2, Column::interactive(90.).delegate(Delegate::choice(LEVELS)))
                 .column(3, Column::fixed(48.).delegate(Delegate::Check))
-                .column(4, Column::stretch().delegate(Delegate::Progress(100.)))
-                .column(5, Column::fixed(76.).delegate(Delegate::button("Run", |_, _, _| {})))
+                .column(4, Column::interactive(140.).delegate(Delegate::slider(0., 100., 1., 0)))
+                .column(5, Column::interactive(170.).delegate(Delegate::dynamic_slider(DynamicRange::new().decimals(1))))
+                .column(6, Column::fixed(56.).delegate(Delegate::Switch))
+                .column(7, Column::fixed(64.).delegate(Delegate::toggle("Pin")))
+                .column(8, Column::fixed(64.).delegate(Delegate::Radio))
+                .column(9, Column::stretch().delegate(Delegate::Progress(100.)))
+                .column(10, Column::fixed(76.).delegate(Delegate::button("Run", |_, _, _| {})))
                 .selection_mode(SelectionMode::Extended)
                 .sorting(true)
                 .alternating(true)
@@ -952,7 +976,7 @@ impl Render for Properties {
                             .on_select(on(&w, |p: &mut Properties, i: usize, _, _| p.align = i)),
                     )),
             )))
-            .child(natural(lw::GroupBox::new("Appearance").child(
+            .child(lw::CollapsibleGroupBox::new("pr-appearance", "Appearance").child(
                 div()
                     .flex()
                     .flex_col()
@@ -971,7 +995,13 @@ impl Render for Properties {
                             .label("Prevent edits")
                             .checked(self.locked)
                             .on_change(on(&w, |p: &mut Properties, v: CheckState, _, _| p.locked = v == CheckState::Checked)),
-                    ))
+                    )),
+            ))
+            .child(lw::CollapsibleGroupBox::new("pr-transform", "Transform").default_open(false).child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(8.))
                     .child(field(
                         "Rotation",
                         div().flex().items_center().gap(px(10.)).child(
@@ -983,7 +1013,7 @@ impl Render for Properties {
                         )
                         .child(format!("{:.0}°", self.rotation)),
                     )),
-            )))
+            ))
             .child(
                 row()
                     .child(div().flex_1())
