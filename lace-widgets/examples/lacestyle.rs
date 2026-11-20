@@ -514,7 +514,13 @@ impl Gallery {
                         .on_change(set(w, |g, v| g.spins[1] = v)),
                 )
                 .child(SpinBox::new("spin2", self.spins[2]).no_buttons().on_change(set(w, |g, v| g.spins[2] = v)))
-                .child(SpinBox::new("spin3", self.spins[3]).on_change(set(w, |g, v| g.spins[3] = v))),
+                .child(
+                    SpinBox::new("spin3", self.spins[3])
+                        .range(0., 3600.)
+                        .suffix(" s")
+                        .on_change(set(w, |g, v| g.spins[3] = v)),
+                )
+                .child(SpinBox::new("spin-ro", self.spins[0]).read_only(true).on_change(set(w, |_, _| {}))),
         );
 
         let check = |i: usize, label: &'static str| {

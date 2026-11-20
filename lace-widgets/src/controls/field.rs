@@ -7,10 +7,12 @@
 
 use std::rc::Rc;
 
-use gpui_kit::component::input::{Input, InputState, Textarea, TextareaState};
+use gpui_kit::base::{Decrement, Increment};
+use gpui_kit::component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
 use gpui_kit::component::Sizable;
 use gpui_kit::gpui::{
-    anchored, canvas, deferred, div, prelude::FluentBuilder, px, AnyElement, App, BoxShadow, Focusable,
+    anchored, canvas, deferred, div, prelude::FluentBuilder, px, AnyElement, App, AppContext as _, BoxShadow,
+    Context, Focusable, Subscription,
     ElementId, Entity, InteractiveElement, IntoElement, ParentElement, RenderOnce, ScrollWheelEvent,
     SharedString, StatefulInteractiveElement, Styled, Window,
 };
@@ -26,6 +28,9 @@ use crate::style::{hsla, paint, ActiveStyle, LaceStyle, State};
 pub const ARROW_AREA: f32 = 20.0;
 /// Width of a spin box's button column, px.
 pub const SPIN_AREA: f32 = 16.0;
+/// gpui-kit's key context for number fields: Up / Down are bound there
+/// to `Increment` / `Decrement`.
+const NUMBER_INPUT_CONTEXT: &str = "NumberInput";
 
 /// The rounded field container for state `s`.
 pub fn field_div(style: &LaceStyle, s: State) -> gpui_kit::gpui::Div {
@@ -480,23 +485,140 @@ impl ComboBox {
 
 type Change = Rc<dyn Fn(f64, &mut Window, &mut App)>;
 
-/// A `QSpinBox` / `QDoubleSpinBox`: a field with up/down buttons, the mouse
-/// wheel and the arrow keys stepping the value.
+/// A `QSpinBox` / `QDoubleSpinBox`: an editable number field with up/down
+/// buttons. The value can be typed (Enter or leaving the field commits it,
+/// clamped to the range and rounded to `decimals`; text that is no number
+/// goes back to the value), and the buttons, the mouse wheel, Up / Down and
+/// Page Up / Page Down step it.
+///
+/// The text state lives with the element (keyed by its id), so the API
+/// stays a plain value plus `on_change`, as for the other controls. A host
+/// that needs the text field itself (its own menus, say) passes one with
+/// [`SpinBox::input`].
 #[derive(IntoElement)]
 pub struct SpinBox {
     id: ElementId,
+    input: Option<Entity<InputState>>,
     value: f64,
     min: f64,
     max: f64,
     step: f64,
     decimals: usize,
+    prefix: SharedString,
+    suffix: SharedString,
     plus_minus: bool,
     buttons: bool,
     disabled: bool,
+    read_only: bool,
     forced: Option<State>,
     forced_part: Option<(bool, State)>,
     on_change: Option<Change>,
     fill: Option<Margin>,
+}
+
+/// What a spin box knows each frame: written on every render, read by the
+/// text field's commit and by the steps.
+#[derive(Clone)]
+struct SpinSpec {
+    value: f64,
+    min: f64,
+    max: f64,
+    decimals: usize,
+    on_change: Option<Change>,
+}
+
+impl SpinSpec {
+    fn text(&self, v: f64) -> SharedString {
+        format!("{:.*}", self.decimals, v).into()
+    }
+
+    /// `v` in range and rounded as shown.
+    fn fit(&self, v: f64) -> f64 {
+        let v = v.clamp(self.min, self.max.max(self.min));
+        let scale = 10f64.powi(self.decimals as i32);
+        (v * scale).round() / scale
+    }
+}
+
+/// A typed number, as `QDoubleSpinBox` reads one: surrounding blanks and
+/// a decimal comma allowed.
+fn parse_number(text: &str) -> Option<f64> {
+    let t = text.trim().replace(',', ".");
+    t.parse::<f64>().ok().filter(|v| v.is_finite())
+}
+
+/// A spin box's own state: its text field, and the text last written into
+/// it from the value (so a new value shows, but typing is left alone).
+struct SpinEdit {
+    input: Entity<InputState>,
+    shown: SharedString,
+    spec: SpinSpec,
+    _subscription: Subscription,
+}
+
+impl SpinEdit {
+    fn new(spec: SpinSpec, input: Option<Entity<InputState>>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let shown = spec.text(spec.value);
+        let input = input.unwrap_or_else(|| cx.new(|cx| InputState::new(window, cx).default_value(shown.clone())));
+        let _subscription = Self::watch(&input, window, cx);
+        Self { input, shown, spec, _subscription }
+    }
+
+    /// Commit the typed text on Enter, or on leaving the field.
+    fn watch(input: &Entity<InputState>, window: &mut Window, cx: &mut Context<Self>) -> Subscription {
+        cx.subscribe_in(input, window, |this, _, ev: &InputEvent, window, cx| {
+            if matches!(ev, InputEvent::PressEnter { .. } | InputEvent::Blur) {
+                this.commit(window, cx);
+            }
+        })
+    }
+
+    /// Edit through `input` from now on (the host passed another one).
+    fn attach(&mut self, input: Entity<InputState>, window: &mut Window, cx: &mut Context<Self>) {
+        self._subscription = Self::watch(&input, window, cx);
+        self.input = input;
+        self.shown = SharedString::default();
+    }
+
+    /// Show `text` in the field.
+    fn show(&mut self, text: SharedString, window: &mut Window, cx: &mut Context<Self>) {
+        if self.input.read(cx).value() != text {
+            self.input.update(cx, |s, cx| s.set_value(text.clone(), window, cx));
+        }
+        self.shown = text;
+    }
+
+    /// Take `v` as the new value: tell the owner, and show it.
+    fn set(&mut self, v: f64, window: &mut Window, cx: &mut Context<Self>) {
+        let v = self.spec.fit(v);
+        if v != self.spec.value {
+            self.spec.value = v;
+            if let Some(f) = self.spec.on_change.clone() {
+                f(v, window, cx);
+            }
+        }
+        let text = self.spec.text(v);
+        self.show(text, window, cx);
+    }
+
+    /// The typed text as the value, or back to the value if it is no number.
+    fn commit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let typed = self.input.read(cx).value();
+        match parse_number(&typed) {
+            Some(v) => self.set(v, window, cx),
+            None => {
+                let text = self.spec.text(self.spec.value);
+                self.show(text, window, cx);
+            }
+        }
+    }
+
+    /// One step of `by` from what the field shows (typed text included, as
+    /// `QSpinBox` steps from its text).
+    fn step_by(&mut self, by: f64, window: &mut Window, cx: &mut Context<Self>) {
+        let base = parse_number(&self.input.read(cx).value()).unwrap_or(self.spec.value);
+        self.set(base + by, window, cx);
+    }
 }
 
 impl SpinBox {
@@ -504,14 +626,18 @@ impl SpinBox {
     pub fn new(id: impl Into<ElementId>, value: f64) -> Self {
         Self {
             id: id.into(),
+            input: None,
             value,
             min: 0.0,
             max: 99.0,
             step: 1.0,
             decimals: 0,
+            prefix: SharedString::default(),
+            suffix: SharedString::default(),
             plus_minus: false,
             buttons: true,
             disabled: false,
+            read_only: false,
             forced: None,
             forced_part: None,
             on_change: None,
@@ -551,6 +677,33 @@ impl SpinBox {
         self
     }
 
+    /// Type into `state` rather than a text field of the spin box's own,
+    /// so the host can reach it (its menus, its focus). The spin box still
+    /// commits it on Enter or on leaving it, and writes new values into it.
+    pub fn input(mut self, state: &Entity<InputState>) -> Self {
+        self.input = Some(state.clone());
+        self
+    }
+
+    /// Text before the number, not part of the value (`setPrefix`).
+    pub fn prefix(mut self, prefix: impl Into<SharedString>) -> Self {
+        self.prefix = prefix.into();
+        self
+    }
+
+    /// Text after the number, not part of the value (`setSuffix`), e.g. `" s"`.
+    pub fn suffix(mut self, suffix: impl Into<SharedString>) -> Self {
+        self.suffix = suffix.into();
+        self
+    }
+
+    /// Read-only: the value shows and can be selected, but not typed or
+    /// stepped (`setReadOnly`).
+    pub fn read_only(mut self, read_only: bool) -> Self {
+        self.read_only = read_only;
+        self
+    }
+
     /// `+` / `-` symbols instead of chevrons.
     pub fn plus_minus(mut self) -> Self {
         self.plus_minus = true;
@@ -584,8 +737,14 @@ impl SpinBox {
         self
     }
 
-    fn text(&self) -> SharedString {
-        format!("{:.*}", self.decimals, self.value).into()
+    fn spec(&self) -> SpinSpec {
+        SpinSpec {
+            value: self.value,
+            min: self.min,
+            max: self.max,
+            decimals: self.decimals,
+            on_change: self.on_change.clone(),
+        }
     }
 }
 
@@ -603,20 +762,52 @@ impl RenderOnce for SpinBox {
 
 impl SpinBox {
     fn render_face(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        // The text field and what it last showed, kept with the element.
+        let spec = self.spec();
+        let edit = window.use_keyed_state(child_id(&self.id, "edit"), cx, {
+            let (spec, input) = (spec.clone(), self.input.clone());
+            move |window, cx| SpinEdit::new(spec, input, window, cx)
+        });
+        // A new value from the owner shows at once; while the user types,
+        // the value is unchanged and the text is left alone.
+        edit.update(cx, |e, cx| {
+            if let Some(input) = self.input.clone().filter(|i| *i != e.input) {
+                e.attach(input, window, cx);
+            }
+            e.spec = spec.clone();
+            let text = spec.text(spec.value);
+            if text != e.shown {
+                e.show(text, window, cx);
+            }
+        });
+        let input = edit.read(cx).input.clone();
+        let focus = input.read(cx).focus_handle(cx);
+
         let ix = Interaction::new(self.id.clone(), window, cx)
-            .focusable(&self.id, window, cx)
+            .with_focus(focus)
             .force(self.forced.map(|f| State { hovered: false, pressed: false, ..f }));
         let mut s = ix.state(window, cx).with_disabled(self.disabled);
         s.focused = s.focused || ix.is_focused(window);
         let style = cx.lace().clone();
-        let h = style.control_height;
         let (value, min, max, step) = (self.value, self.min, self.max, self.step);
-        let clamp = move |v: f64| v.clamp(min, max);
-        let text = self.text();
+        let steps = self.on_change.is_some() && !self.disabled && !self.read_only;
 
-        let mut el = field_div(&style, s).id(self.id.clone()).pl(px(4.)).child(
-            div().flex_1().min_w_0().overflow_hidden().child(text),
-        );
+        let affix = |text: &SharedString| {
+            (!text.is_empty()).then(|| div().flex_none().child(text.clone()))
+        };
+        let mut el = field_div(&style, s)
+            .id(self.id.clone())
+            .pl(px(4.))
+            .when_some(affix(&self.prefix), |d, p| d.child(p))
+            .child(
+                div().flex_1().min_w_0().child(
+                    Input::new(&input)
+                        .xsmall()
+                        .appearance(false)
+                        .disabled(self.disabled || self.read_only),
+                ),
+            )
+            .when_some(affix(&self.suffix), |d, p| d.child(p.pr(px(2.))));
 
         if self.buttons {
             let mut col = div().w(px(SPIN_AREA)).h_full().flex().flex_col();
@@ -627,11 +818,10 @@ impl SpinBox {
                     forced.or(self.forced.map(|_| State::NORMAL)),
                 );
                 let enabled = if up { value < max } else { value > min };
-                let ps = pix.state(window, cx).with_disabled(s.disabled || !enabled);
+                let ps = pix.state(window, cx).with_disabled(s.disabled || self.read_only || !enabled);
                 let tint = rules::field_button_tint(&style, ps);
-                let glyph = rules::field_glyph(&style, s, false, enabled);
+                let glyph = rules::field_glyph(&style, s, self.read_only, enabled);
                 let plus_minus = self.plus_minus;
-                let on_change = self.on_change.clone();
                 let part = div()
                     .id(part_id)
                     .flex_1()
@@ -651,47 +841,93 @@ impl SpinBox {
                         }
                     }));
                 let part = pix.bind(part, ps.disabled);
-                let part = match on_change {
-                    Some(f) if !ps.disabled => part.on_click(move |_, window, cx| {
+                let part = if steps && !ps.disabled {
+                    let edit = edit.clone();
+                    part.on_click(move |_, window, cx| {
                         cx.stop_propagation();
-                        f(clamp(if up { value + step } else { value - step }), window, cx)
-                    }),
-                    _ => part,
+                        edit.update(cx, |e, cx| e.step_by(if up { step } else { -step }, window, cx));
+                    })
+                } else {
+                    part
                 };
                 col = col.child(part);
             }
             el = el.child(col);
         }
-        let _ = h;
 
         let el = el.when(self.fill.is_some(), |d| d.size_full());
         let el = ix.bind(el, s.disabled);
-        match self.on_change {
-            Some(f) if !s.disabled => {
-                let key = f.clone();
-                el.on_scroll_wheel(move |ev: &ScrollWheelEvent, window, cx| {
-                    // The wheel is the spin box's: the view beneath must not
-                    // scroll as well (Qt accepts the wheel event).
-                    cx.stop_propagation();
-                    let dy = f32::from(ev.delta.pixel_delta(px(20.)).y);
-                    if dy.abs() > 0.0 {
-                        f(clamp(if dy > 0.0 { value + step } else { value - step }), window, cx);
-                    }
-                })
-                .on_key_down(move |ev, window, cx| match ev.keystroke.key.as_str() {
-                    "up" => key(clamp(value + step), window, cx),
-                    "down" => key(clamp(value - step), window, cx),
-                    "pageup" => key(clamp(value + step * 10.0), window, cx),
-                    "pagedown" => key(clamp(value - step * 10.0), window, cx),
-                    _ => {}
-                })
-            }
-            _ => el,
+        if !steps {
+            return el;
         }
+        let (wheel, key, up, down) = (edit.clone(), edit.clone(), edit.clone(), edit);
+        // Up / Down come through gpui-kit's number-input bindings (a
+        // single-line text field leaves them unhandled); Page Up / Down step
+        // ten at a time, as in Qt.
+        el.key_context(NUMBER_INPUT_CONTEXT)
+            .on_action(move |_: &Increment, window, cx| {
+                up.update(cx, |e, cx| e.step_by(step, window, cx));
+            })
+            .on_action(move |_: &Decrement, window, cx| {
+                down.update(cx, |e, cx| e.step_by(-step, window, cx));
+            })
+            .on_scroll_wheel(move |ev: &ScrollWheelEvent, window, cx| {
+                // The wheel is the spin box's: the view beneath must not
+                // scroll as well (Qt accepts the wheel event).
+                cx.stop_propagation();
+                let dy = f32::from(ev.delta.pixel_delta(px(20.)).y);
+                if dy.abs() > 0.0 {
+                    let by = if dy > 0.0 { step } else { -step };
+                    wheel.update(cx, |e, cx| e.step_by(by, window, cx));
+                }
+            })
+            .on_key_down(move |ev, window, cx| {
+                let by = match ev.keystroke.key.as_str() {
+                    "pageup" => step * 10.0,
+                    "pagedown" => -step * 10.0,
+                    _ => return,
+                };
+                cx.stop_propagation();
+                key.update(cx, |e, cx| e.step_by(by, window, cx));
+            })
     }
 }
 
 /// The field's focus ring colour, exposed for custom fields.
 pub fn field_focus(style: &LaceStyle, s: State) -> gpui_kit::gpui::Hsla {
     hsla(paint::focus_ring(style, s))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_number, SpinSpec};
+
+    fn spec(min: f64, max: f64, decimals: usize) -> SpinSpec {
+        SpinSpec { value: 0.0, min, max, decimals, on_change: None }
+    }
+
+    #[test]
+    fn a_typed_number_is_read_as_a_double_spin_box_reads_it() {
+        assert_eq!(parse_number(" 2.5 "), Some(2.5));
+        assert_eq!(parse_number("2,5"), Some(2.5), "a decimal comma");
+        assert_eq!(parse_number("-3"), Some(-3.0));
+        assert_eq!(parse_number("1e3"), Some(1000.0));
+        assert_eq!(parse_number(""), None);
+        assert_eq!(parse_number("abc"), None);
+        assert_eq!(parse_number("inf"), None, "only finite numbers");
+        assert_eq!(parse_number("NaN"), None);
+    }
+
+    #[test]
+    fn a_value_is_kept_in_range_and_rounded_as_shown() {
+        let s = spec(0.0, 10.0, 2);
+        assert_eq!(s.fit(3.14159), 3.14);
+        assert_eq!(s.fit(-1.0), 0.0);
+        assert_eq!(s.fit(12.0), 10.0);
+        assert_eq!(s.text(3.14159), "3.14");
+        let ints = spec(-5.0, 5.0, 0);
+        assert_eq!(ints.fit(2.6), 3.0, "an int spin box rounds");
+        assert_eq!(ints.text(3.0), "3");
+        assert_eq!(spec(4.0, 1.0, 0).fit(9.0), 4.0, "an empty range holds its minimum");
+    }
 }
