@@ -182,6 +182,19 @@ Mouse and keyboard:
 
 The slider delegates keep an integer cell an integer. Every in-place edit emits `ModelEvent::Edited`.
 
+## Lazy tables (`ItemModel::lazy_table`)
+
+`ItemModel::lazy_table(headers, rows)` is a read-only table that knows only its size. As a view draws rows it lacks, it emits `ModelEvent::FetchRows { first, count }` (whole chunks, a page either side of what shows); answer with `model.update(cx, |m, cx| { m.fill_rows(first, rows); cx.notify() })`. Rows not filled yet draw empty.
+
+| Call | Does |
+|---|---|
+| `.fetch_chunk(n)` / `.cache_limit(n)` | Rows asked for at once (256) / rows kept (20 000; the farthest from the last fill go first) |
+| `reset_rows(n)` | New data: `n` rows, the cache dropped, the view keeps its scroll |
+| `forget_pending()` | A fetch failed: the view asks again |
+| `is_lazy()` / `is_loaded(row)` / `cells(row)` | What the model is and holds |
+
+A lazy table never sorts, and a row's `NodeId` is its index. `cargo run -p lace-widgets --example lazy_table` shows ten million rows.
+
 ## Commands
 
 ```sh

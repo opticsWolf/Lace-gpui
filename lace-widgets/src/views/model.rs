@@ -9,8 +9,16 @@
 //! `model.update(cx, |m, cx| { ...; cx.notify() })` and every view on the
 //! model repaints. Changes a *user* makes through a view also emit a
 //! [`ModelEvent`], so an app can tell its own writes from the user's.
+//!
+//! A *lazy* table ([`ItemModel::lazy_table`]) knows only its size: a view
+//! asks for the rows it is about to draw ([`ModelEvent::FetchRows`]) and the
+//! owner answers with [`ItemModel::fill_rows`], as Qt's `fetchMore`. Its
+//! rows are read-only and its cache is bounded, so it serves a table of
+//! millions of rows without holding them.
 
 use std::cmp::Ordering;
+use std::collections::{BTreeMap, BTreeSet};
+use std::ops::Range;
 
 use gpui_kit::gpui::{EventEmitter, SharedString};
 
@@ -188,6 +196,31 @@ pub enum ModelEvent {
         /// Ascending.
         ascending: bool,
     },
+    /// A view is about to draw rows of a lazy table it does not hold:
+    /// answer with [`ItemModel::fill_rows`] from `first` (fewer rows are
+    /// fine; the view asks again for the rest).
+    FetchRows {
+        /// First row.
+        first: usize,
+        /// Rows wanted.
+        count: usize,
+    },
+}
+
+/// Rows a lazy table asks for at once, by default.
+pub const FETCH_CHUNK: usize = 256;
+/// Rows a lazy table keeps, by default.
+pub const CACHE_LIMIT: usize = 20_000;
+
+/// A lazy table's size and the rows it holds now.
+#[derive(Clone, Debug)]
+struct Lazy {
+    rows: usize,
+    cache: BTreeMap<usize, Vec<Value>>,
+    /// Chunks asked for and not yet filled.
+    pending: BTreeSet<usize>,
+    chunk: usize,
+    limit: usize,
 }
 
 /// The item store.
@@ -199,6 +232,7 @@ pub struct ItemModel {
     /// Parents derive their check state from their children (`ItemIsAutoTristate`).
     pub auto_tristate: bool,
     revision: u64,
+    lazy: Option<Lazy>,
 }
 
 impl EventEmitter<ModelEvent> for ItemModel {}
@@ -228,6 +262,130 @@ impl ItemModel {
             m.add_row(None, vec![i.into()]);
         }
         m
+    }
+
+    /// A read-only table of `rows` rows whose cells are fetched as a view
+    /// shows them: the view emits [`ModelEvent::FetchRows`] and the owner
+    /// answers with [`fill_rows`](Self::fill_rows). Rows are addressed by
+    /// their index (a row's [`NodeId`] is its index) and never sort.
+    pub fn lazy_table(headers: impl IntoIterator<Item = impl Into<SharedString>>, rows: usize) -> Self {
+        let mut m = Self::new(headers);
+        m.lazy = Some(Lazy {
+            rows,
+            cache: BTreeMap::new(),
+            pending: BTreeSet::new(),
+            chunk: FETCH_CHUNK,
+            limit: CACHE_LIMIT,
+        });
+        m
+    }
+
+    /// Ask for `rows` rows at once (at least 1).
+    pub fn fetch_chunk(mut self, rows: usize) -> Self {
+        if let Some(l) = &mut self.lazy {
+            l.chunk = rows.max(1);
+        }
+        self
+    }
+
+    /// Keep at most `rows` rows (at least one chunk); the rows farthest
+    /// from the last fill go first.
+    pub fn cache_limit(mut self, rows: usize) -> Self {
+        if let Some(l) = &mut self.lazy {
+            l.limit = rows.max(l.chunk);
+        }
+        self
+    }
+
+    /// A table fetched as it is shown.
+    pub fn is_lazy(&self) -> bool {
+        self.lazy.is_some()
+    }
+
+    /// New data for a lazy table: `rows` rows, nothing held, nothing asked.
+    pub fn reset_rows(&mut self, rows: usize) {
+        if let Some(l) = &mut self.lazy {
+            l.rows = rows;
+            l.cache.clear();
+            l.pending.clear();
+            self.touch();
+        }
+    }
+
+    /// Rows of a lazy table from `first` (past the end: dropped).
+    pub fn fill_rows(&mut self, first: usize, rows: Vec<Vec<Value>>) {
+        let Some(l) = &mut self.lazy else { return };
+        let end = first.saturating_add(rows.len()).min(l.rows);
+        for (r, cells) in (first..end).zip(rows) {
+            l.cache.insert(r, cells);
+        }
+        if end > first {
+            for chunk in first / l.chunk..=(end - 1) / l.chunk {
+                l.pending.remove(&chunk);
+            }
+        }
+        if l.cache.len() > l.limit {
+            let mid = (first + end) / 2;
+            let mut keys: Vec<usize> = l.cache.keys().copied().collect();
+            keys.sort_by_key(|&r| std::cmp::Reverse(r.abs_diff(mid)));
+            let extra = l.cache.len() - l.limit;
+            for r in keys.into_iter().take(extra) {
+                l.cache.remove(&r);
+            }
+        }
+        self.touch();
+    }
+
+    /// The chunks of `rows` a lazy table neither holds nor has asked for,
+    /// as row ranges (adjacent chunks joined); they count as asked for now.
+    pub fn request(&mut self, rows: Range<usize>) -> Vec<Range<usize>> {
+        let Some(l) = &mut self.lazy else { return Vec::new() };
+        let end = rows.end.min(l.rows);
+        if rows.start >= end {
+            return Vec::new();
+        }
+        let mut out: Vec<Range<usize>> = Vec::new();
+        for chunk in rows.start / l.chunk..=(end - 1) / l.chunk {
+            let span = chunk * l.chunk..((chunk + 1) * l.chunk).min(l.rows);
+            if l.pending.contains(&chunk) || span.clone().all(|r| l.cache.contains_key(&r)) {
+                continue;
+            }
+            l.pending.insert(chunk);
+            match out.last_mut() {
+                Some(last) if last.end == span.start => last.end = span.end,
+                _ => out.push(span),
+            }
+        }
+        out
+    }
+
+    /// Forget what was asked for and not filled (a fetch that failed), so
+    /// a view asks again.
+    pub fn forget_pending(&mut self) {
+        if let Some(l) = &mut self.lazy {
+            l.pending.clear();
+        }
+    }
+
+    /// Whether a lazy table holds row `row` now.
+    pub fn is_loaded(&self, row: usize) -> bool {
+        self.lazy.as_ref().is_some_and(|l| l.cache.contains_key(&row))
+    }
+
+    /// Whether row `id` exists.
+    pub fn contains(&self, id: NodeId) -> bool {
+        match &self.lazy {
+            Some(l) => id < l.rows,
+            None => self.node(id).is_some(),
+        }
+    }
+
+    /// A row's cells (a lazy row not held yet: none).
+    pub fn cells(&self, id: NodeId) -> Vec<Value> {
+        match &self.lazy {
+            Some(l) => l.cache.get(&id).cloned().unwrap_or_default(),
+            None => self.node(id).map(|n| n.cells.clone()).unwrap_or_default(),
+        }
     }
 
     /// Bumped on every change; views cache by it.
@@ -298,6 +456,7 @@ impl ItemModel {
     pub fn clear(&mut self) {
         self.nodes.clear();
         self.roots.clear();
+        self.reset_rows(0);
         self.touch();
     }
 
@@ -325,6 +484,9 @@ impl ItemModel {
 
     /// A cell (Empty when missing).
     pub fn value(&self, id: NodeId, column: usize) -> Value {
+        if let Some(l) = &self.lazy {
+            return l.cache.get(&id).and_then(|r| r.get(column).cloned()).unwrap_or_default();
+        }
         self.node(id).and_then(|n| n.cells.get(column).cloned()).unwrap_or_default()
     }
 
@@ -455,8 +617,11 @@ impl ItemModel {
         self.touch();
     }
 
-    /// Sort every level by `column`, stably.
+    /// Sort every level by `column`, stably (a lazy table: never).
     pub fn sort(&mut self, column: usize, ascending: bool) {
+        if self.lazy.is_some() {
+            return;
+        }
         let key = |m: &ItemModel, a: &NodeId, b: &NodeId| {
             let o = m.value(*a, column).compare(&m.value(*b, column));
             if ascending { o } else { o.reverse() }
@@ -477,6 +642,9 @@ impl ItemModel {
     /// The rows a view shows, in order, with their depth: children of
     /// expanded rows only (all rows when `flat`).
     pub fn visible(&self, flat: bool) -> Vec<(NodeId, usize)> {
+        if let Some(l) = &self.lazy {
+            return (0..l.rows).map(|r| (r, 0)).collect();
+        }
         let mut out = Vec::with_capacity(self.nodes.len());
         let mut stack: Vec<(NodeId, usize)> = self.roots.iter().rev().map(|&r| (r, 0)).collect();
         while let Some((id, depth)) = stack.pop() {
@@ -489,19 +657,29 @@ impl ItemModel {
         out
     }
 
-    /// Every row's cells, top-level rows in order (a table's value).
+    /// Every row's cells, top-level rows in order (a table's value; a lazy
+    /// table: the rows it holds now).
     pub fn rows(&self) -> Vec<Vec<Value>> {
+        if let Some(l) = &self.lazy {
+            return l.cache.values().cloned().collect();
+        }
         self.roots.iter().filter_map(|&r| self.node(r).map(|n| n.cells.clone())).collect()
     }
 
     /// Row count, all levels.
     pub fn len(&self) -> usize {
-        self.nodes.iter().flatten().count()
+        match &self.lazy {
+            Some(l) => l.rows,
+            None => self.nodes.iter().flatten().count(),
+        }
     }
 
     /// No rows.
     pub fn is_empty(&self) -> bool {
-        self.roots.is_empty()
+        match &self.lazy {
+            Some(l) => l.rows == 0,
+            None => self.roots.is_empty(),
+        }
     }
 }
 
@@ -574,6 +752,34 @@ mod tests {
         m.remove(src);
         assert!(m.is_empty());
         assert_eq!(m.len(), 0);
+    }
+
+    #[test]
+    fn a_lazy_table_asks_for_the_chunks_it_lacks_once() {
+        let mut m = ItemModel::lazy_table(["a", "b"], 1000).fetch_chunk(100).cache_limit(250);
+        assert!(m.is_lazy() && m.len() == 1000 && m.contains(999) && !m.contains(1000));
+        assert_eq!(m.request(150..260), vec![100..300], "whole chunks, joined");
+        assert!(m.request(150..260).is_empty(), "asked for already");
+        assert_eq!(m.request(950..2000), vec![900..1000], "clipped to the table");
+        let rows: Vec<Vec<Value>> = (100..300).map(|r| vec![Value::Int(r as i64), "x".into()]).collect();
+        m.fill_rows(100, rows);
+        assert_eq!(m.value(250, 0), Value::Int(250));
+        assert_eq!(m.cells(250), vec![Value::Int(250), Value::from("x")]);
+        assert_eq!(m.value(50, 0), Value::Empty, "not fetched: empty");
+        assert!(m.request(100..300).is_empty(), "held");
+        m.forget_pending();
+        assert_eq!(m.request(950..1000), vec![900..1000], "a failed fetch is asked again");
+        m.fill_rows(900, (900..1000).map(|r| vec![Value::Int(r as i64)]).collect());
+        assert_eq!(m.rows().len(), 250, "the cache keeps its limit");
+        assert!(m.is_loaded(999) && m.is_loaded(150) && !m.is_loaded(149), "the rows farthest from the fill went");
+        assert_eq!(m.request(100..200), vec![100..200], "a chunk partly dropped is asked again");
+        let rev = m.revision();
+        m.sort(0, false);
+        assert_eq!(m.revision(), rev, "a lazy table never sorts");
+        m.reset_rows(5);
+        assert_eq!((m.len(), m.rows().len()), (5, 0));
+        assert_eq!(m.request(0..10), vec![0..5]);
+        assert_eq!(m.visible(true), (0..5).map(|r| (r, 0)).collect::<Vec<_>>());
     }
 
     #[test]

@@ -290,6 +290,46 @@ struct RowData {
     editable: bool,
 }
 
+/// The rows a view shows: listed with their depth, or -- a lazy table --
+/// just how many (row `i` is node `i`, depth 0), so a table of millions of
+/// rows costs nothing to list.
+#[derive(Clone, Debug)]
+enum RowList {
+    Listed(Vec<(NodeId, usize)>),
+    Flat(usize),
+}
+
+impl RowList {
+    fn len(&self) -> usize {
+        match self {
+            RowList::Listed(rows) => rows.len(),
+            RowList::Flat(n) => *n,
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    fn get(&self, ix: usize) -> Option<(NodeId, usize)> {
+        match self {
+            RowList::Listed(rows) => rows.get(ix).copied(),
+            RowList::Flat(n) => (ix < *n).then_some((ix, 0)),
+        }
+    }
+
+    fn position(&self, id: NodeId) -> Option<usize> {
+        match self {
+            RowList::Listed(rows) => rows.iter().position(|r| r.0 == id),
+            RowList::Flat(n) => (id < *n).then_some(id),
+        }
+    }
+
+    fn ids(&self, range: std::ops::RangeInclusive<usize>) -> Vec<NodeId> {
+        range.filter_map(|i| self.get(i)).map(|r| r.0).collect()
+    }
+}
+
 /// The view.
 pub struct ItemView {
     model: Entity<ItemModel>,
@@ -298,7 +338,7 @@ pub struct ItemView {
     user_widths: Vec<Option<f32>>,
     widths: Vec<f32>,
     content_widths: (u64, Vec<f32>),
-    rows: Vec<(NodeId, usize)>,
+    rows: RowList,
     rows_rev: Option<u64>,
     selection: BTreeSet<NodeId>,
     current: Option<NodeId>,
@@ -343,7 +383,7 @@ impl ItemView {
             user_widths: Vec::new(),
             widths: Vec::new(),
             content_widths: (u64::MAX, Vec::new()),
-            rows: Vec::new(),
+            rows: RowList::Listed(Vec::new()),
             rows_rev: None,
             selection: BTreeSet::new(),
             current: None,
@@ -519,7 +559,7 @@ impl ItemView {
     /// Select `id` alone and make it current.
     pub fn select(&mut self, id: NodeId, cx: &mut Context<Self>) {
         self.refresh_rows(cx);
-        let ix = self.rows.iter().position(|r| r.0 == id);
+        let ix = self.rows.position(id);
         self.selection.clear();
         if self.selection_mode != SelectionMode::None {
             self.selection.insert(id);
@@ -553,14 +593,16 @@ impl ItemView {
     fn refresh_rows(&mut self, cx: &App) {
         let m = self.model.read(cx);
         if self.rows_rev != Some(m.revision()) {
-            self.rows = m.visible(self.mode != Mode::Tree);
+            self.rows = if m.is_lazy() {
+                RowList::Flat(m.len())
+            } else {
+                RowList::Listed(m.visible(self.mode != Mode::Tree))
+            };
             self.rows_rev = Some(m.revision());
-            let live: BTreeSet<NodeId> = self.rows.iter().map(|r| r.0).collect();
-            self.selection.retain(|id| m.node(*id).is_some());
-            if self.current.is_some_and(|c| m.node(c).is_none()) {
+            self.selection.retain(|id| m.contains(*id));
+            if self.current.is_some_and(|c| !m.contains(c)) {
                 self.current = None;
             }
-            let _ = live;
         }
     }
 
@@ -601,7 +643,7 @@ impl ItemView {
                 _ => None,
             };
             // A sample keeps huge models cheap.
-            for &(id, depth) in self.rows.iter().take(400) {
+            for (id, depth) in (0..self.rows.len().min(400)).filter_map(|i| self.rows.get(i)) {
                 let text = m.value(id, c).display(decimals);
                 let mut cw = self.measure(&text, window, style) + 2.0 * CELL_PAD;
                 if c == 0 && self.mode == Mode::Tree {
@@ -678,7 +720,8 @@ impl ItemView {
                     if !ctrl {
                         self.selection.clear();
                     }
-                    self.selection.extend(self.rows[lo..=hi].iter().map(|r| r.0));
+                    let ids = self.rows.ids(lo..=hi);
+                    self.selection.extend(ids);
                 } else if ctrl {
                     if !self.selection.remove(&id) {
                         self.selection.insert(id);
@@ -700,10 +743,10 @@ impl ItemView {
         if self.rows.is_empty() {
             return;
         }
-        let here = self.current.and_then(|c| self.rows.iter().position(|r| r.0 == c));
+        let here = self.current.and_then(|c| self.rows.position(c));
         let target = if relative { here.map(|h| h as isize + to).unwrap_or(0) } else { to };
         let ix = target.clamp(0, self.rows.len() as isize - 1) as usize;
-        let id = self.rows[ix].0;
+        let Some((id, _)) = self.rows.get(ix) else { return };
         self.click_row(id, ix, false, shift && self.selection_mode == SelectionMode::Extended, cx);
         self.scroll.scroll_to_item(ix, ScrollStrategy::Nearest);
     }
@@ -887,7 +930,7 @@ impl ItemView {
                 }
             }
             "a" if (m.control || m.platform) && self.selection_mode == SelectionMode::Extended => {
-                self.selection = self.rows.iter().map(|r| r.0).collect();
+                self.selection = self.rows.ids(0..=self.rows.len().saturating_sub(1)).into_iter().collect();
                 cx.emit(ViewEvent::SelectionChanged);
                 cx.notify();
             }
@@ -909,14 +952,28 @@ impl ItemView {
 
     fn row_data(&self, range: Range<usize>, cx: &App) -> Vec<RowData> {
         let m = self.model.read(cx);
-        self.rows[range.start.min(self.rows.len())..range.end.min(self.rows.len())]
-            .iter()
-            .enumerate()
-            .filter_map(|(k, &(id, depth))| {
+        let n_rows = self.rows.len();
+        (range.start.min(n_rows)..range.end.min(n_rows))
+            .filter_map(|ix| {
+                let (id, depth) = self.rows.get(ix)?;
+                if m.is_lazy() {
+                    // A row not fetched yet draws empty until it is.
+                    return Some(RowData {
+                        id,
+                        ix,
+                        depth,
+                        cells: m.cells(id),
+                        check: None,
+                        has_children: false,
+                        expanded: false,
+                        enabled: true,
+                        editable: false,
+                    });
+                }
                 let n = m.node(id)?;
                 Some(RowData {
                     id,
-                    ix: range.start + k,
+                    ix,
                     depth,
                     cells: n.cells.clone(),
                     check: n.check,
@@ -929,12 +986,28 @@ impl ItemView {
             .collect()
     }
 
+    /// Ask a lazy model for the rows of `range` it lacks, and a page either
+    /// side, so a scroll finds them there.
+    fn fetch_rows(&mut self, range: Range<usize>, cx: &mut Context<Self>) {
+        if !self.model.read(cx).is_lazy() {
+            return;
+        }
+        let page = range.len().max(1);
+        let want = range.start.saturating_sub(page)..range.end.saturating_add(page);
+        self.model.update(cx, |m, cx| {
+            for r in m.request(want) {
+                cx.emit(ModelEvent::FetchRows { first: r.start, count: r.len() });
+            }
+        });
+    }
+
     fn render_rows(&mut self, range: Range<usize>, window: &mut Window, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let style = cx.lace().clone();
         let pal = style.pal(State::NORMAL).clone();
         let grid = hsla(rules::frame_line(&style, State::NORMAL));
         let focused = self.focus.contains_focused(window, cx) && window.last_input_was_keyboard();
         let total: f32 = self.widths.iter().sum();
+        self.fetch_rows(range.clone(), cx);
         let data = self.row_data(range, cx);
         let mut out = Vec::with_capacity(data.len());
         for r in data {

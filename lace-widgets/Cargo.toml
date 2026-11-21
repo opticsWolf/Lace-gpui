@@ -15,3 +15,6 @@ lyon_tessellation = "1"
 
 [[example]]
 name = "lacestyle"
+
+[[example]]
+name = "lazy_table"
