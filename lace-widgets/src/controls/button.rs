@@ -143,7 +143,10 @@ impl PushButton {
     /// Width with the label shown, px.
     pub fn labelled_width(&self, window: &mut Window, style: &LaceStyle) -> f32 {
         let text = measure_text(&self.label, window, style);
-        let icon = if self.icon.is_some() { ICON + if text > 0.0 { ICON_GAP } else { 0.0 } } else { 0.0 };
+        if self.icon.is_some() && text == 0.0 {
+            return self.icon_width(style).max(self.min_width);
+        }
+        let icon = if self.icon.is_some() { ICON + ICON_GAP } else { 0.0 };
         (text + icon + 2.0 * PAD).max(self.min_width)
     }
 
@@ -244,10 +247,13 @@ impl PushButton {
                 Collapse::Never => false,
             };
         let label = self.label.clone();
+        // An icon with no label to show sits alone, centred: no label
+        // child (its gap would push the icon off centre), an icon's padding.
+        let icon_alone = self.icon.is_some() && (collapsed || self.label.is_empty());
         let el = div()
             .id(self.id.clone())
             .h(px(style.control_height))
-            .px(px(if collapsed { 6.0 } else { PAD }))
+            .px(px(if icon_alone { 6.0 } else { PAD }))
             .flex()
             .items_center()
             .justify_center()
@@ -256,7 +262,7 @@ impl PushButton {
             .text_size(px(style.font_size))
             .text_color(hsla(face.text))
             .when_some(self.icon.clone(), |d, icon| d.child(div().flex_none().size(px(ICON)).child(icon(hsla(face.text)))))
-            .when(!collapsed, |d| d.child(div().whitespace_nowrap().child(self.label)));
+            .when(!collapsed && !self.label.is_empty(), |d| d.child(div().whitespace_nowrap().child(self.label)));
         let el = match (self.fill.is_some(), self.collapse) {
             (true, _) => el.w_full().h_full(),
             (false, Collapse::Alone) if may_collapse => {
