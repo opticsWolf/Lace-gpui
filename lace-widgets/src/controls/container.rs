@@ -4,7 +4,7 @@
 use std::rc::Rc;
 
 use gpui_kit::gpui::{
-    div, prelude::FluentBuilder, px, AnyElement, App, BoxShadow, Div, ElementId, InteractiveElement,
+    div, prelude::FluentBuilder, px, AnyElement, App, BoxShadow, Div, ElementId, Hsla, InteractiveElement,
     IntoElement, ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 
@@ -538,17 +538,41 @@ pub fn popup_panel(style: &LaceStyle) -> Div {
         .text_size(px(style.font_size))
 }
 
+/// Width of a menu item's leading column (icon, check mark or dot), px.
+pub const MENU_LEAD: f32 = 22.0;
+/// Side of a menu item's icon, px.
+pub const MENU_ICON: f32 = 16.0;
+/// A menu item's horizontal inset in its panel, px (each side).
+pub const MENU_INSET: f32 = 3.0;
+/// A menu item's padding after the label (or shortcut, or arrow), px.
+const MENU_TAIL: f32 = 8.0;
+/// The gap before a shortcut, px.
+const MENU_SHORTCUT_GAP: f32 = 16.0;
+/// The submenu arrow's box, px.
+const MENU_ARROW: f32 = 12.0;
+
+/// A hover handler: `true` on entering, `false` on leaving.
+type HoverHandler = Rc<dyn Fn(bool, &mut Window, &mut App)>;
+
 /// A `QMenu` item.
+///
+/// The leading column holds the item's icon, or, without one, its check
+/// mark (or an exclusive item's dot) while checked: a checkable `QAction`
+/// draws its mark in the icon column, and an icon takes its place.
 #[derive(IntoElement)]
 pub struct MenuItem {
     id: ElementId,
     label: SharedString,
+    icon: Option<super::button::Icon>,
     shortcut: Option<SharedString>,
     checked: Option<bool>,
+    radio: bool,
     submenu: bool,
     disabled: bool,
     forced: Option<State>,
+    selector: Option<SharedString>,
     on_click: Option<Handler>,
+    on_hover: Option<HoverHandler>,
 }
 
 impl MenuItem {
@@ -557,13 +581,29 @@ impl MenuItem {
         Self {
             id: id.into(),
             label: label.into(),
+            icon: None,
             shortcut: None,
             checked: None,
+            radio: false,
             submenu: false,
             disabled: false,
             forced: None,
+            selector: None,
             on_click: None,
+            on_hover: None,
         }
+    }
+
+    /// An icon in the leading column, built for the item's text colour.
+    pub fn icon(mut self, f: impl Fn(Hsla) -> AnyElement + 'static) -> Self {
+        self.icon = Some(Rc::new(f));
+        self
+    }
+
+    /// An icon from an already shared builder.
+    pub fn icon_rc(mut self, icon: Option<super::button::Icon>) -> Self {
+        self.icon = icon;
+        self
     }
 
     /// Shortcut text, right-aligned.
@@ -576,6 +616,42 @@ impl MenuItem {
     pub fn checked(mut self, on: bool) -> Self {
         self.checked = Some(on);
         self
+    }
+
+    /// One of an exclusive group (`QActionGroup`): checked, it shows a dot
+    /// instead of a tick.
+    pub fn radio(mut self, on: bool) -> Self {
+        self.checked = Some(on);
+        self.radio = true;
+        self
+    }
+
+    /// A debug selector for tests (`VisualTestContext::debug_bounds`).
+    pub fn selector(mut self, s: impl Into<SharedString>) -> Self {
+        self.selector = Some(s.into());
+        self
+    }
+
+    /// Called as the pointer enters (`true`) or leaves (`false`). An item
+    /// with this handler is driven by its menu: it paints the state given
+    /// by [`state`](Self::state) (hovered = the menu's current item), not
+    /// the pointer's.
+    pub fn on_hover(mut self, f: impl Fn(bool, &mut Window, &mut App) + 'static) -> Self {
+        self.on_hover = Some(Rc::new(f));
+        self
+    }
+
+    /// Width the item needs, px: inset, leading column, label, shortcut,
+    /// arrow and tail.
+    pub fn needed_width(&self, window: &mut Window, style: &LaceStyle) -> f32 {
+        let label = super::button::measure_text(&self.label, window, style);
+        let shortcut = self
+            .shortcut
+            .as_ref()
+            .filter(|s| !s.is_empty())
+            .map_or(0.0, |s| MENU_SHORTCUT_GAP + super::button::measure_text(s, window, style));
+        let arrow = if self.submenu { MENU_ARROW } else { 0.0 };
+        2.0 * MENU_INSET + MENU_LEAD + label + shortcut + arrow + MENU_TAIL
     }
 
     /// Show a submenu chevron.
@@ -605,41 +681,88 @@ impl MenuItem {
 
 impl RenderOnce for MenuItem {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let ix = Interaction::new(self.id.clone(), window, cx).force(self.forced);
+        // Driven by a menu, the item paints the state it is given.
+        let driven = self.on_hover.is_some();
+        let forced = if driven { Some(self.forced.unwrap_or(State::NORMAL)) } else { self.forced };
+        let ix = Interaction::new(self.id.clone(), window, cx).force(forced);
         let s = ix.state(window, cx).with_disabled(self.disabled);
         let s = State { checked: s.checked || self.checked == Some(true), ..s };
         let style = cx.lace().clone();
         let (fill, text) = rules::menu_item(&style, s);
         let check = hsla(if fill.is_some() { text } else { rules::menu_check(&style, s) });
         let text_c = hsla(text);
+        let lead = div().w(px(MENU_LEAD)).h_full().flex_none().flex().items_center().justify_center();
+        let lead = match (self.icon, s.checked, self.radio) {
+            (Some(icon), _, _) => lead.child(icon(text_c)),
+            (None, true, false) => {
+                lead.child(glyph::painter(move |b, window, _| glyph::paint_check(window, glyph::centered(b, 10.0), check)))
+            }
+            (None, true, true) => lead.child(div().size(px(6.)).rounded_full().bg(check)),
+            (None, false, _) => lead,
+        };
         let el = div()
             .id(self.id.clone())
             .h(px(style.control_height))
-            .mx(px(3.))
-            .pr(px(8.))
+            .mx(px(MENU_INSET))
+            .pr(px(MENU_TAIL))
             .flex()
             .items_center()
             .rounded(px(style.control_radius))
             .text_size(px(style.font_size))
             .text_color(text_c)
             .when_some(fill, |d, f| d.bg(hsla(f)))
-            .child(div().w(px(22.)).h_full().when(s.checked, |d| {
-                d.child(glyph::painter(move |b, window, _| glyph::paint_check(window, glyph::centered(b, 10.0), check)))
-            }))
+            .when_some(self.selector, |d, sel| d.debug_selector(move || sel.to_string()))
+            .child(lead)
             .child(div().flex_1().whitespace_nowrap().child(self.label))
-            .when_some(self.shortcut, |d, k| d.child(div().pl(px(16.)).opacity(0.7).child(k)))
+            .when_some(self.shortcut.filter(|k| !k.is_empty()), |d, k| {
+                d.child(div().pl(px(MENU_SHORTCUT_GAP)).whitespace_nowrap().opacity(0.7).child(k))
+            })
             .when(self.submenu, |d| {
-                d.child(glyph::glyph_box(12.0, 12.0, move |b, window, _| {
+                d.child(glyph::glyph_box(MENU_ARROW, MENU_ARROW, move |b, window, _| {
                     glyph::paint_chevron(window, b, Dir::Right, text_c, 7.0)
                 }))
             });
         let el = ix.bind(el, s.disabled);
+        let el = match self.on_hover {
+            Some(f) => el.on_hover(move |h, window, cx| f(*h, window, cx)),
+            None => el,
+        };
         match self.on_click.filter(|_| !s.disabled) {
             Some(f) => el.on_click(move |_, window, cx| f(window, cx)),
             None => el,
         }
     }
 }
+
+/// A menu section header (`QMenu::addSection`): its title in muted text,
+/// then the separator line.
+pub fn menu_section(style: &LaceStyle, title: impl Into<SharedString>) -> Div {
+    let line = hsla(rules::frame_line(style, State::NORMAL));
+    div()
+        .flex()
+        .items_center()
+        .px(px(MENU_SECTION_INSET))
+        .py(px(MENU_SECTION_PAD))
+        .gap(px(MENU_SECTION_GAP))
+        .text_size(px(style.font_size))
+        .text_color(hsla(crate::style::paint::muted(style, State::NORMAL)))
+        .child(div().flex_none().whitespace_nowrap().child(title.into()))
+        .child(div().flex_1().min_w(px(MENU_SECTION_STUB)).h(px(1.)).bg(line))
+}
+
+/// Width a section header needs, px.
+pub fn menu_section_width(title: &str, window: &mut Window, style: &LaceStyle) -> f32 {
+    2.0 * MENU_SECTION_INSET + super::button::measure_text(title, window, style) + MENU_SECTION_GAP + MENU_SECTION_STUB
+}
+
+/// A section title's inset from the panel's sides, px (`MENU_SEPARATOR_INSET`).
+const MENU_SECTION_INSET: f32 = 6.0;
+/// Between a section title and its line, px.
+const MENU_SECTION_GAP: f32 = 6.0;
+/// Above and below a section title, px.
+const MENU_SECTION_PAD: f32 = 4.0;
+/// The least line after a section title, px.
+const MENU_SECTION_STUB: f32 = 12.0;
 
 /// A menu separator.
 pub fn menu_separator(style: &LaceStyle) -> Div {

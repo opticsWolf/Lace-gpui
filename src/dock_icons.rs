@@ -37,6 +37,43 @@ pub enum DockIcon {
 }
 
 impl DockIcon {
+    /// Every dock icon.
+    pub const ALL: [DockIcon; 13] = [
+        Self::CloseTab,
+        Self::Close,
+        Self::TabsMenu,
+        Self::Pin,
+        Self::Unpin,
+        Self::PinAll,
+        Self::Float,
+        Self::Dock,
+        Self::Maximize,
+        Self::Restore,
+        Self::TabList,
+        Self::ChevronLeft,
+        Self::ChevronRight,
+    ];
+
+    /// Its stem: the file name in `lace/resources/lace_icons`, and its name
+    /// in the icon provider's [`DOCK`](crate::icons::DOCK) set.
+    pub fn stem(self) -> &'static str {
+        match self {
+            Self::CloseTab => "close_tab",
+            Self::Close => "close",
+            Self::TabsMenu => "tabs_menu",
+            Self::Pin => "pin",
+            Self::Unpin => "unpin",
+            Self::PinAll => "pin_all",
+            Self::Float => "float",
+            Self::Dock => "dock",
+            Self::Maximize => "maximize",
+            Self::Restore => "restore",
+            Self::TabList => "tab_list",
+            Self::ChevronLeft => "chevron_left",
+            Self::ChevronRight => "chevron_right",
+        }
+    }
+
     /// The SVG source.
     pub fn svg(self) -> &'static [u8] {
         match self {
@@ -89,11 +126,7 @@ mod tests {
 
     #[test]
     fn every_icon_is_an_svg() {
-        use DockIcon::*;
-        for icon in [
-            CloseTab, Close, TabsMenu, Pin, Unpin, PinAll, Float, Dock, Maximize, Restore, TabList,
-            ChevronLeft, ChevronRight,
-        ] {
+        for icon in DockIcon::ALL {
             let text = std::str::from_utf8(icon.svg()).unwrap();
             assert!(text.contains("<svg"), "{icon:?}");
         }

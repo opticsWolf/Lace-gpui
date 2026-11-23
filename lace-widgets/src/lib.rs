@@ -20,6 +20,7 @@ pub mod controls;
 pub mod dynamic_button;
 pub mod edge;
 pub mod glyph;
+pub mod icons;
 pub mod style;
 pub mod views;
 

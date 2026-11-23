@@ -147,6 +147,7 @@ Mouse and keyboard:
 | `floating::drop_overlay(indicator, cx)` | The five-target cross, styled by `DropOverlayStyle` |
 | `dock_icons::DockIcon::*.icon()` | Lace's tabler icons |
 | `dock_icons::tab_label(icon, label)` | A tab label with an icon |
+| `icons::register(IconSet::from_static("app", ICONS), cx)` | The icon provider: named SVG sets. `icons::lookup("undo", cx)` takes a bare stem (first registered set that has it; the dock set `lace-dock` last) or `"set/stem"`. `IconSet::from_dir` reads a folder |
 
 ## Widgets
 
@@ -160,6 +161,9 @@ Mouse and keyboard:
 | `ProgressBar::fill(rgba)` | Paints the fill in your colour instead of the style's (enabled bars only) |
 | `Slider::on_drag(\|pressed, w, cx\| ..)` / `.selected(bool)` | Drag start/end hook; a fill that stays visible on a selected row |
 | `lace_widgets::style::install(style, cx)` | Swaps the widget style live |
+| `lace_widgets::icons::named("undo", cx)` | A registered icon as a widget `Icon` (16 px, tinted by the widget) |
+| `lace_widgets::controls::Menu` | `Menu::new("id", entries, nav).header(..).max_height(h).on_hover(\|path, w, cx\| ..).on_activate(\|path, w, cx\| ..)`: a `QMenu` whose submenus fan out beside their item (left near the window edge). Entries: `MenuEntry::action(MenuAction::new("Undo").icon_named("undo", cx).shortcut("Ctrl+Z").checked(b)/.radio(b))`, `MenuEntry::submenu(action, children)`, `Separator`, `MenuEntry::section("Title")` |
+| `lace_widgets::controls::MenuNav` | The app-held menu state: `step(root, ±1)`, `enter` (→), `back` (←/Esc), `activate` → `Activation::{Opened, Run(path), Nothing}`, `hover(path)` then `settle(root, path)` after a delay, `open(root, path)` on a click |
 
 ## Item-view delegates (`lace_widgets::views::Delegate`)
 

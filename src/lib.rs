@@ -29,6 +29,8 @@
 //! - [`floating`] *(feature `gpui-kit`)* — the whole-pane drag preview and
 //!   Lace's five-target drop overlay.
 //! - [`dock_icons`] *(feature `gpui-kit`)* — Lace's tabler dock icons.
+//! - [`icons`] *(feature `gpui-kit`)* — the icon provider: named SVG icon
+//!   sets an app registers, looked up by name (the dock icons are one).
 //!
 //! `QUICKREF.md` and `ARCHITECTURE.md` at the repository root give the API
 //! at a glance and how the pieces fit together.
@@ -71,6 +73,8 @@ pub mod geometry;
 pub mod edge_tabs;
 #[cfg(feature = "gpui-kit")]
 pub mod dock_icons;
+#[cfg(feature = "gpui-kit")]
+pub mod icons;
 #[cfg(feature = "gpui-kit")]
 pub mod sidebar;
 #[cfg(feature = "gpui-kit")]
