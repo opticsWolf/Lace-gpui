@@ -26,4 +26,4 @@ pub mod views;
 
 pub use dynamic_button::DynamicButton;
 pub use edge::{edge_color, edged, hover_fill, on_fill, press_fill};
-pub use style::{install, install_preset, ActiveStyle, LaceStyle, State};
+pub use style::{font_scale, install, install_preset, set_font_scale, with_font_scale, ActiveStyle, LaceStyle, State, FONT_SCALE_RANGE};

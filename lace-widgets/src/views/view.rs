@@ -356,6 +356,9 @@ pub struct ItemView {
     hovered: Option<NodeId>,
     focus: FocusHandle,
     row_height: f32,
+    /// The style's `font_scale` at the last render: row heights, column
+    /// widths and paddings grow and shrink with the text.
+    scale: f32,
     alternating: bool,
     header: bool,
     grid: bool,
@@ -401,6 +404,7 @@ impl ItemView {
             hovered: None,
             focus: cx.focus_handle(),
             row_height: if mode == Mode::Table { 26.0 } else { 22.0 },
+            scale: 1.0,
             alternating: mode == Mode::Table,
             header: mode != Mode::List,
             grid: mode == Mode::Table,
@@ -436,7 +440,12 @@ impl ItemView {
         self
     }
 
-    /// Row height, px.
+    /// A row's drawn height: the set one at the style's font scale.
+    fn row_h(&self) -> f32 {
+        self.row_height * self.scale
+    }
+
+    /// Row height, px (at font scale 1).
     pub fn row_height(mut self, h: f32) -> Self {
         self.row_height = h;
         self
@@ -528,7 +537,7 @@ impl ItemView {
 
     /// Whether the rows overflow the viewport, so a vertical bar shows.
     fn needs_vbar(&self) -> bool {
-        self.rows.len() as f32 * self.row_height > self.viewport.1 + 0.5
+        self.rows.len() as f32 * self.row_h() > self.viewport.1 + 0.5
     }
 
     /// The model.
@@ -624,20 +633,23 @@ impl ItemView {
         f32::from(window.text_system().layout_line(text, px(style.font_size), &[run], None).width)
     }
 
-    /// Widths of `Contents` columns, cached per model revision.
+    /// Widths of `Contents` columns at font scale 1, cached per model
+    /// revision.
     fn contents_widths(&mut self, n: usize, window: &mut Window, style: &LaceStyle, cx: &App) -> Vec<f32> {
         let rev = self.model.read(cx).revision();
         if self.content_widths.0 == rev && self.content_widths.1.len() == n {
             return self.content_widths.1.clone();
         }
         let m = self.model.read(cx).clone();
+        // Text is measured at the style's size, so back to scale 1.
+        let unscale = 1.0 / self.scale.max(0.01);
         let mut out = vec![0.0; n];
         for (c, w) in out.iter_mut().enumerate() {
             if self.column_spec(c).resize != Resize::Contents {
                 continue;
             }
             let head = m.headers().get(c).map(|h| h.to_string()).unwrap_or_default();
-            *w = self.measure(&head, window, style) + 2.0 * CELL_PAD + 14.0;
+            *w = self.measure(&head, window, style) * unscale + 2.0 * CELL_PAD + 14.0;
             let decimals = match self.column_spec(c).delegate {
                 Delegate::Number { decimals, .. } => Some(decimals),
                 _ => None,
@@ -645,7 +657,7 @@ impl ItemView {
             // A sample keeps huge models cheap.
             for (id, depth) in (0..self.rows.len().min(400)).filter_map(|i| self.rows.get(i)) {
                 let text = m.value(id, c).display(decimals);
-                let mut cw = self.measure(&text, window, style) + 2.0 * CELL_PAD;
+                let mut cw = self.measure(&text, window, style) * unscale + 2.0 * CELL_PAD;
                 if c == 0 && self.mode == Mode::Tree {
                     cw += self.lead_width(depth, m.node(id).is_some_and(|n| n.check.is_some()));
                 }
@@ -678,10 +690,12 @@ impl ItemView {
         }
         // Nothing to scroll, nothing to reserve.
         let avail = (self.viewport.0 - if self.needs_vbar() { self.bar_gutter(style) } else { 0.0 }).max(0.0);
+        // Widths are set at font scale 1 and drawn at the style's.
+        let k = self.scale;
         let mut widths = vec![0.0; n];
         let mut stretch = 0;
         for (c, w) in widths.iter_mut().enumerate() {
-            *w = match self.column_spec(c).resize {
+            *w = k * match self.column_spec(c).resize {
                 Resize::Fixed(w) => w,
                 Resize::Interactive(w) => self.user_widths[c].unwrap_or(w),
                 Resize::Contents => contents[c],
@@ -693,7 +707,7 @@ impl ItemView {
         }
         if stretch > 0 {
             let used: f32 = widths.iter().sum();
-            let share = ((avail - used) / stretch as f32).max(60.0);
+            let share = ((avail - used) / stretch as f32).max(60.0 * k);
             for (c, w) in widths.iter_mut().enumerate() {
                 if self.column_spec(c).resize == Resize::Stretch {
                     *w = share;
@@ -752,7 +766,7 @@ impl ItemView {
     }
 
     fn page_rows(&self) -> isize {
-        ((self.viewport.1 / self.row_height).floor() as isize - 1).max(1)
+        ((self.viewport.1 / self.row_h()).floor() as isize - 1).max(1)
     }
 
     // ----------------------------------------------------------- tree, checks
@@ -1022,7 +1036,7 @@ impl ItemView {
             let (fill, _) = rules::item_row(&style, s);
             let mut row = item_row_div(&style, s)
                 .id(ElementId::NamedInteger(self.id_name(), r.id as u64))
-                .h(px(self.row_height))
+                .h(px(self.row_h()))
                 .w(px(total.max(self.viewport.0)))
                 .flex_none()
                 .relative()
@@ -1091,20 +1105,20 @@ impl ItemView {
             .items_center()
             // An open editor fills the cell, as Qt's updateEditorGeometry
             // sets it to the whole option.rect.
-            .px(px(if editor_open || is_button { 0.0 } else { CELL_PAD }))
-            .gap(px(4.))
+            .px(px(if editor_open || is_button { 0.0 } else { CELL_PAD * self.scale }))
+            .gap(px(4. * self.scale))
             .overflow_hidden()
             .when(self.grid, |d| d.border_r_1().border_b_1().border_color(grid));
 
         // Tree lead: indent, chevron, check box.
         if c == 0 && self.mode == Mode::Tree {
             let branch = hsla(rules::branch(style, s));
-            cell = cell.child(div().w(px(r.depth as f32 * INDENT)).flex_none());
+            cell = cell.child(div().w(px(r.depth as f32 * INDENT * self.scale)).flex_none());
             if self.root_decorated || r.depth > 0 {
                 let open = r.expanded;
                 let chevron = div()
                     .id(ElementId::NamedInteger(SharedString::from(format!("{}-br", self.id_name())), id as u64))
-                    .w(px(BRANCH))
+                    .w(px(BRANCH * self.scale))
                     .h_full()
                     .flex_none()
                     .when(r.has_children, |d| {
@@ -1271,7 +1285,7 @@ impl ItemView {
                 let v = value.as_f64().unwrap_or(0.0);
                 let frac = (v / max.max(f64::EPSILON)).clamp(0.0, 1.0) as f32;
                 let label: SharedString = format!("{:.0}%", 100.0 * frac).into();
-                let h = (self.row_height - 8.0).max(4.0);
+                let h = (self.row_h() - 8.0 * self.scale).max(4.0);
                 let ps = State { disabled: s.disabled, ..State::NORMAL };
                 let (fill, ink) = progress_colors(style, ps);
                 // One label colour that reads on both the fill and the track,
@@ -1416,7 +1430,7 @@ impl ItemView {
         // An empty section runs on to the right edge, over the scrollbar's
         // gutter too, so the header leaves no hole above the bar.
         let filler = header_section(style, State::NORMAL, SharedString::default(), None).flex_none().w(px(4000.));
-        div().overflow_hidden().flex_none().child(row.child(filler)).into_any_element()
+        div().w_full().min_w_0().overflow_hidden().flex_none().child(row.child(filler)).into_any_element()
     }
 }
 
@@ -1424,8 +1438,18 @@ impl Render for ItemView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let style = cx.lace().clone();
         let pal = style.pal(State::NORMAL).clone();
+        self.scale = style.font_scale;
         self.refresh_rows(cx);
-        let n = self.model.read(cx).column_count();
+        // A table with no headers and no rows has no columns: its header is
+        // a bare band, as a QTableView over an empty model draws it.
+        let n = {
+            let m = self.model.read(cx);
+            if self.mode == Mode::Table && m.headers().is_empty() && self.rows.len() == 0 {
+                0
+            } else {
+                m.column_count()
+            }
+        };
         self.layout_columns(n, window, &style, cx);
         let total: f32 = self.widths.iter().sum();
         let extent = self.bar_extent(&style);
@@ -1545,11 +1569,11 @@ impl Render for ItemView {
                                 this.resizing = None;
                                 return;
                             }
-                            let w = (w0 + f32::from(ev.position.x) - x0).max(MIN_COLUMN);
+                            let w = (w0 + f32::from(ev.position.x) - x0).max(MIN_COLUMN * this.scale);
                             if this.user_widths.len() <= c {
                                 this.user_widths.resize(c + 1, None);
                             }
-                            this.user_widths[c] = Some(w);
+                            this.user_widths[c] = Some(w / this.scale.max(0.01));
                             cx.notify();
                         }
                     });

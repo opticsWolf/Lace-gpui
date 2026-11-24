@@ -20,6 +20,16 @@ If the app also uses `lace-widgets`, add this:
 lace_widgets::install_preset("midnight", cx);
 ```
 
+One central font scale grows or shrinks every widget's text and control
+height, and the kit theme's font size (its rem) with it. Styles installed
+later are drawn at it too:
+
+```rust
+lace_widgets::set_font_scale(1.25, cx);         // clamped to FONT_SCALE_RANGE (0.75..=2.0)
+lace_widgets::font_scale(cx);                   // 1.25
+lace_widgets::with_font_scale(zoom, form)       // an element drawn as if the scale were `zoom` (a zoomed canvas)
+```
+
 ## Themes (no gpui needed)
 
 | Call | Result |
@@ -162,7 +172,7 @@ Mouse and keyboard:
 | `Slider::on_drag(\|pressed, w, cx\| ..)` / `.selected(bool)` | Drag start/end hook; a fill that stays visible on a selected row |
 | `lace_widgets::style::install(style, cx)` | Swaps the widget style live |
 | `lace_widgets::icons::named("undo", cx)` | A registered icon as a widget `Icon` (16 px, tinted by the widget) |
-| `lace_widgets::controls::Menu` | `Menu::new("id", entries, nav).header(..).max_height(h).on_hover(\|path, w, cx\| ..).on_activate(\|path, w, cx\| ..)`: a `QMenu` whose submenus fan out beside their item (left near the window edge). Entries: `MenuEntry::action(MenuAction::new("Undo").icon_named("undo", cx).shortcut("Ctrl+Z").checked(b)/.radio(b))`, `MenuEntry::submenu(action, children)`, `Separator`, `MenuEntry::section("Title")` |
+| `lace_widgets::controls::Menu` | `Menu::new("id", entries, nav).header(..).max_height(h).on_hover(\|path, w, cx\| ..).on_activate(\|path, w, cx\| ..)`: a `QMenu` whose submenus fan out beside their item (left near the window edge). Entries: `MenuEntry::action(MenuAction::new("Undo").icon_named("undo", cx).shortcut("Ctrl+Z").checked(b)/.radio(b))`, `MenuEntry::submenu(action, children)`, `Separator`, `MenuEntry::section("Title")`, `MenuEntry::widget(width, |window, cx| element)` (a `QWidgetAction`: a slider, say; the keyboard passes over it) |
 | `lace_widgets::controls::MenuNav` | The app-held menu state: `step(root, ±1)`, `enter` (→), `back` (←/Esc), `activate` → `Activation::{Opened, Run(path), Nothing}`, `hover(path)` then `settle(root, path)` after a delay, `open(root, path)` on a click |
 
 ## Item-view delegates (`lace_widgets::views::Delegate`)

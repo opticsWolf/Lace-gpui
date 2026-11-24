@@ -795,19 +795,38 @@ impl SpinBox {
         let affix = |text: &SharedString| {
             (!text.is_empty()).then(|| div().flex_none().child(text.clone()))
         };
+        let field = Input::new(&input).xsmall().appearance(false).disabled(self.disabled || self.read_only);
         let mut el = field_div(&style, s)
             .id(self.id.clone())
             .pl(px(4.))
-            .when_some(affix(&self.prefix), |d, p| d.child(p))
-            .child(
-                div().flex_1().min_w_0().child(
-                    Input::new(&input)
-                        .xsmall()
-                        .appearance(false)
-                        .disabled(self.disabled || self.read_only),
-                ),
-            )
-            .when_some(affix(&self.suffix), |d, p| d.child(p.pr(px(2.))));
+            .when_some(affix(&self.prefix), |d, p| d.child(p));
+        el = match affix(&self.suffix) {
+            // Qt's suffix is part of the text: it follows the value ("2,00
+            // sec"), so the text field is as wide as what it holds and the
+            // rest of the face, clicked, focuses it.
+            Some(suffix) => {
+                let text = input.read(cx).value();
+                let size = window.rem_size() * 0.75;
+                let run = gpui_kit::gpui::TextRun {
+                    len: text.len(),
+                    font: window.text_style().font(),
+                    color: gpui_kit::gpui::black(),
+                    background_color: None,
+                    underline: None,
+                    strikethrough: None,
+                };
+                let w = f32::from(window.text_system().layout_line(&text, size, &[run], None).width).ceil();
+                // The kit's xsmall padding on each side, and the caret.
+                let w = w + 2.0 * 4.0 + 2.0;
+                let focus = input.read(cx).focus_handle(cx);
+                el.child(div().min_w_0().w(px(w)).child(field))
+                    .child(suffix.pr(px(2.)))
+                    .child(div().flex_1().h_full().on_mouse_down(gpui_kit::gpui::MouseButton::Left, move |_, window, cx| {
+                        focus.focus(window, cx);
+                    }))
+            }
+            None => el.child(div().flex_1().min_w_0().child(field)),
+        };
 
         if self.buttons {
             let mut col = div().w(px(SPIN_AREA)).h_full().flex().flex_col();

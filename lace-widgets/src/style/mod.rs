@@ -21,7 +21,11 @@ pub mod paint;
 pub mod rules;
 pub mod tones;
 
-use gpui_kit::gpui::{App, Global, Hsla};
+use gpui_kit::component::theme::Theme;
+use gpui_kit::gpui::{
+    AnyElement, App, Bounds, Element, ElementId, Global, GlobalElementId, Hsla, InspectorElementId, IntoElement,
+    LayoutId, Pixels, Window,
+};
 use lace_gpui::color::{self, Rgba};
 use lace_gpui::contrast::{contrast_target, Role};
 use lace_gpui::engine::{Contrast, Scrollbar, ThemeSpec, Tokens};
@@ -200,6 +204,9 @@ pub struct LaceStyle {
     pub small_font_size: f32,
     /// Height of a one-line control (button, field, combo), px.
     pub control_height: f32,
+    /// The font scale the three sizes above are at: 1 is Fusion's 9 pt.
+    /// [`LaceStyle::scaled`] moves them to another.
+    pub font_scale: f32,
 }
 
 impl Global for LaceStyle {}
@@ -244,6 +251,21 @@ impl LaceStyle {
             font_size: 12.0,
             small_font_size: 11.0,
             control_height: 24.0,
+            font_scale: 1.0,
+        }
+    }
+
+    /// This style at font scale *scale*: its font sizes and control height
+    /// grown or shrunk by the same factor, the way a control's size hint
+    /// follows its font in Qt.
+    pub fn scaled(&self, scale: f32) -> Self {
+        let k = scale / self.font_scale;
+        Self {
+            font_size: self.font_size * k,
+            small_font_size: self.small_font_size * k,
+            control_height: self.control_height * k,
+            font_scale: scale,
+            ..self.clone()
         }
     }
 
@@ -301,9 +323,137 @@ impl LaceStyle {
 }
 
 /// Install `style` for every LaceStyle widget, and refresh open windows.
+/// It is drawn at the central [`font_scale`], whatever scale it was made at.
 pub fn install(style: LaceStyle, cx: &mut App) {
-    cx.set_global(style);
+    let scale = font_scale(cx);
+    cx.set_global(style.scaled(scale));
     cx.refresh_windows();
+}
+
+/// The smallest and largest central font scale.
+pub const FONT_SCALE_RANGE: (f32, f32) = (0.75, 2.0);
+
+/// The central font scale every widget is drawn at (Qt's application font
+/// grown or shrunk): Lace's styles and the kit's rem both follow it.
+struct FontScale(f32);
+
+impl Global for FontScale {}
+
+/// The central font scale: 1 until [`set_font_scale`] changes it.
+pub fn font_scale(cx: &App) -> f32 {
+    cx.try_global::<FontScale>().map_or(1.0, |s| s.0)
+}
+
+/// Set the central font scale (clamped to [`FONT_SCALE_RANGE`]): the
+/// installed [`LaceStyle`] and the kit theme's font sizes (its rem) move to
+/// it, and open windows redraw. Styles installed later are drawn at it too.
+pub fn set_font_scale(scale: f32, cx: &mut App) {
+    let scale = scale.clamp(FONT_SCALE_RANGE.0, FONT_SCALE_RANGE.1);
+    let old = font_scale(cx);
+    if scale == old {
+        return;
+    }
+    cx.set_global(FontScale(scale));
+    if cx.has_global::<Theme>() {
+        let k = scale / old;
+        let theme = Theme::global_mut(cx);
+        theme.font_size = theme.font_size * k;
+        theme.mono_font_size = theme.mono_font_size * k;
+    }
+    if cx.has_global::<LaceStyle>() {
+        let style = cx.lace().scaled(scale);
+        cx.set_global(style);
+    }
+    cx.refresh_windows();
+}
+
+/// Draw *child* as though the central font scale were *scale*: Lace's
+/// widgets in it use the installed style at that scale, and the kit's at the
+/// matching rem. A canvas draws a zoomed form this way, at its zoom.
+pub fn with_font_scale(scale: f32, child: impl IntoElement) -> FontScaled {
+    FontScaled { scale, child: child.into_any_element() }
+}
+
+/// The element [`with_font_scale`] returns. It adds no layout node of its
+/// own, so the child keeps its own position.
+pub struct FontScaled {
+    scale: f32,
+    child: AnyElement,
+}
+
+impl FontScaled {
+    /// Run *f* under this element's style and rem, then put both back.
+    fn under<R>(scale: f32, window: &mut Window, cx: &mut App, f: impl FnOnce(&mut Window, &mut App) -> R) -> R {
+        let rem = window.rem_size() * (scale / font_scale(cx));
+        let saved = cx.has_global::<LaceStyle>().then(|| cx.lace().clone());
+        if let Some(s) = &saved {
+            cx.set_global(s.scaled(scale));
+        }
+        let out = window.with_rem_size(Some(rem), |window| f(window, cx));
+        if let Some(s) = saved {
+            cx.set_global(s);
+        }
+        out
+    }
+}
+
+impl IntoElement for FontScaled {
+    type Element = Self;
+
+    fn into_element(self) -> Self::Element {
+        self
+    }
+}
+
+impl Element for FontScaled {
+    type RequestLayoutState = ();
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, ()) {
+        let child = &mut self.child;
+        (Self::under(self.scale, window, cx, |window, cx| child.request_layout(window, cx)), ())
+    }
+
+    fn prepaint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: Bounds<Pixels>,
+        _request_layout: &mut (),
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let child = &mut self.child;
+        Self::under(self.scale, window, cx, |window, cx| child.prepaint(window, cx));
+    }
+
+    fn paint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: Bounds<Pixels>,
+        _request_layout: &mut (),
+        _prepaint: &mut (),
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let child = &mut self.child;
+        Self::under(self.scale, window, cx, |window, cx| child.paint(window, cx));
+    }
 }
 
 /// Install one of Lace's presets; `false` when there is no such preset.
@@ -333,4 +483,19 @@ impl ActiveStyle for App {
 /// An [`Rgba`] as a gpui colour.
 pub fn hsla(c: Rgba) -> Hsla {
     lace_gpui::skin::hsla(c)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_style_scales_from_whatever_scale_it_is_at() {
+        let base = LaceStyle::preset("dark").expect("a preset");
+        let big = base.scaled(1.5);
+        assert_eq!((big.font_size, big.small_font_size, big.control_height), (18.0, 16.5, 36.0));
+        let back = big.scaled(1.0);
+        assert_eq!(back, base);
+        assert_eq!(base.scaled(0.75).scaled(2.0), base.scaled(2.0));
+    }
 }

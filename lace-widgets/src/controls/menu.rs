@@ -125,9 +125,32 @@ pub enum MenuEntry {
     Separator,
     /// A section header: a muted title and a line.
     Section(SharedString),
+    /// A row holding a widget (Qt's `QWidgetAction`): a slider, say. The
+    /// keyboard passes over it; the pointer works it.
+    Widget(MenuWidget),
+}
+
+/// The widget of a [`MenuEntry::Widget`] row, built afresh each frame.
+#[derive(Clone)]
+pub struct MenuWidget {
+    width: f32,
+    build: Rc<dyn Fn(&mut Window, &mut App) -> AnyElement>,
+}
+
+impl MenuWidget {
+    /// A row *width* px wide (the panel grows to it) holding what *build*
+    /// returns.
+    pub fn new(width: f32, build: impl Fn(&mut Window, &mut App) -> AnyElement + 'static) -> Self {
+        Self { width, build: Rc::new(build) }
+    }
 }
 
 impl MenuEntry {
+    /// A widget row.
+    pub fn widget(width: f32, build: impl Fn(&mut Window, &mut App) -> AnyElement + 'static) -> Self {
+        Self::Widget(MenuWidget::new(width, build))
+    }
+
     /// An item.
     pub fn action(action: MenuAction) -> Self {
         Self::Action(action)
@@ -458,6 +481,7 @@ impl Menu {
                 MenuEntry::Action(a) => row("menu-row", a, false).needed_width(window, style),
                 MenuEntry::Submenu(a, _) => row("menu-row", a, true).needed_width(window, style),
                 MenuEntry::Section(t) => menu_section_width(t, window, style),
+                MenuEntry::Widget(w) => w.width,
                 MenuEntry::Separator => 0.0,
             })
             .fold(0.0, f32::max);
@@ -513,6 +537,23 @@ impl Menu {
             let el: AnyElement = match entry {
                 MenuEntry::Separator => menu_separator(&style).into_any_element(),
                 MenuEntry::Section(t) => menu_section(&style, t.clone()).into_any_element(),
+                MenuEntry::Widget(w) => div()
+                    .id(path_id(&self.id, &path))
+                    .w_full()
+                    // The pointer over it leaves the item rows: a submenu
+                    // open beside one closes as it would over any other row.
+                    .on_hover({
+                        let (hover, hp) = (self.on_hover.clone(), path.clone());
+                        move |entered, window, cx| {
+                            if *entered {
+                                if let Some(f) = &hover {
+                                    f(&hp, window, cx)
+                                }
+                            }
+                        }
+                    })
+                    .child((w.build)(window, cx))
+                    .into_any_element(),
                 MenuEntry::Action(a) | MenuEntry::Submenu(a, _) => {
                     let is_sub = matches!(entry, MenuEntry::Submenu(..));
                     let on = self.nav.current(level) == Some(i) || open_here == Some(i);
@@ -732,6 +773,19 @@ mod tests {
             ),
             item("Quit"),
         ]
+    }
+
+    #[test]
+    fn the_keyboard_passes_over_a_widget_row() {
+        let m = vec![item("A"), MenuEntry::widget(200.0, |_, _| div().into_any_element()), item("B")];
+        assert!(!m[1].selectable());
+        let mut nav = MenuNav::first(&m);
+        nav.step(&m, 1);
+        assert_eq!(nav.current(0), Some(2));
+        // The pointer resting on it closes nothing it should not, and runs nothing.
+        nav.hover(&[1]);
+        assert!(nav.settle(&m, &[1]));
+        assert!(matches!(nav.activate(&m), Activation::Nothing));
     }
 
     #[test]

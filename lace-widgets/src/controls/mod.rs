@@ -29,7 +29,7 @@ pub use check::{check_indicator, radio_indicator, CheckBox, CheckState, RadioBut
 pub use field::{field_div, ComboBox, LineEdit, SpinBox, TextEdit};
 pub use interaction::{child_id, Interaction};
 pub use margin::Margin;
-pub use menu::{entry_at, Activation, Check, Menu, MenuAction, MenuEntry, MenuNav};
+pub use menu::{entry_at, Activation, Check, Menu, MenuAction, MenuEntry, MenuNav, MenuWidget};
 pub use nav::{Breadcrumb, Pagination, Stepper};
 pub use range::{round_rect, Dial, DynamicRange, DynamicSlider, ProgressBar, Slider, Ticks};
 pub use status::{Alert, Avatar, Badge, Link, ProgressRing, Separator, Skeleton, Spinner, Tag};
