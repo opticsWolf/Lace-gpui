@@ -6,7 +6,7 @@ for, and [ARCHITECTURE.md](ARCHITECTURE.md) explains how the pieces connect.
 ## Setup
 
 ```toml
-lace-gpui = { version = "0.0.8", features = ["gpui-kit"] }
+lace-gpui = { version = "0.0.9", features = ["gpui-kit"] }
 ```
 
 ```rust
