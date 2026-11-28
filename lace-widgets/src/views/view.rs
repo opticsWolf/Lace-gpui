@@ -1341,7 +1341,10 @@ impl ItemView {
                     .when(align == Align::Center, |d| d.justify_center())
                     .overflow_hidden()
                     .whitespace_nowrap()
-                    .child(value.display(decimals))
+                    // Too long for its column, it elides (Qt's
+                    // `Qt::ElideRight`), not cut off mid-glyph.
+                    .text_ellipsis()
+                    .child(div().min_w_0().overflow_hidden().child(value.display(decimals)))
                     .into_any_element()
             }
         };

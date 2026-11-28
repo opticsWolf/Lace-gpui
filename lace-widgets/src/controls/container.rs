@@ -713,9 +713,22 @@ impl RenderOnce for MenuItem {
             .when_some(fill, |d, f| d.bg(hsla(f)))
             .when_some(self.selector, |d, sel| d.debug_selector(move || sel.to_string()))
             .child(lead)
-            .child(div().flex_1().whitespace_nowrap().child(self.label))
+            // A label or hint too long for a fixed-width menu elides
+            // rather than spilling past the panel; the hint gives way
+            // first, down to half the row.
+            .child(div().flex_1().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().child(self.label))
             .when_some(self.shortcut.filter(|k| !k.is_empty()), |d, k| {
-                d.child(div().pl(px(MENU_SHORTCUT_GAP)).whitespace_nowrap().opacity(0.7).child(k))
+                d.child(
+                    div()
+                        .pl(px(MENU_SHORTCUT_GAP))
+                        .min_w_0()
+                        .max_w(gpui_kit::gpui::relative(0.5))
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_ellipsis()
+                        .opacity(0.7)
+                        .child(k),
+                )
             })
             .when(self.submenu, |d| {
                 d.child(glyph::glyph_box(MENU_ARROW, MENU_ARROW, move |b, window, _| {
