@@ -19,7 +19,7 @@ The aim is screenshot parity with PySide Lace on the same theme.
 
 ```toml
 [dependencies]
-lace-gpui = { version = "0.0.9", features = ["gpui-kit"] }
+lace-gpui = { version = "0.0.10", features = ["gpui-kit"] }
 ```
 
 See [QUICKREF.md](QUICKREF.md) for the API at a glance and
