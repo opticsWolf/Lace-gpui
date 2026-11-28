@@ -24,7 +24,7 @@
 use std::rc::Rc;
 
 use gpui_kit::gpui::{
-    deferred, div, point, prelude::FluentBuilder, px, AnyElement, App, Bounds, Display, Element, ElementId,
+    deferred, div, point, prelude::FluentBuilder, px, AnyElement, App, Bounds, Display, Edges, Element, ElementId,
     GlobalElementId, InspectorElementId, InteractiveElement, IntoElement, LayoutId, MouseButton, ParentElement,
     Pixels, Position, RenderOnce, ScrollHandle, SharedString, StatefulInteractiveElement, Style, Styled, Window,
 };
@@ -407,6 +407,7 @@ pub struct Menu {
     title: Option<SharedString>,
     empty: Option<SharedString>,
     min_width: f32,
+    width: Option<f32>,
     max_height: Option<f32>,
     on_hover: Option<PathHandler>,
     on_activate: Option<PathHandler>,
@@ -423,6 +424,7 @@ impl Menu {
             title: None,
             empty: None,
             min_width: 160.0,
+            width: None,
             max_height: None,
             on_hover: None,
             on_activate: None,
@@ -450,6 +452,14 @@ impl Menu {
     /// The least width of each panel, px (160 by default).
     pub fn min_width(mut self, w: f32) -> Self {
         self.min_width = w;
+        self
+    }
+
+    /// The menu's own panel exactly `w` px wide, whatever its entries
+    /// (a menu whose entries come and go keeps its width); submenus still
+    /// fit theirs.
+    pub fn width(mut self, w: f32) -> Self {
+        self.width = Some(w);
         self
     }
 
@@ -499,7 +509,10 @@ impl Menu {
         cx: &mut App,
     ) -> AnyElement {
         let style = cx.lace().clone();
-        let width = self.panel_width(entries, window, &style);
+        let width = match (level, self.width) {
+            (0, Some(w)) => w,
+            _ => self.panel_width(entries, window, &style),
+        };
         let max_h = match (level, self.max_height) {
             (0, Some(h)) => h,
             _ => f32::from(window.viewport_size().height) - 2.0 * MARGIN,
@@ -683,7 +696,11 @@ impl Element for Fan {
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
         let ids: Vec<LayoutId> = self.children.iter_mut().map(|c| c.request_layout(window, cx)).collect();
-        let style = Style { position: Position::Absolute, display: Display::Flex, ..Style::default() };
+        // Pinned to the row's top-left: with no insets an absolute box sits
+        // at its static place, under the row, and the submenu opened a row
+        // too low.
+        let inset = Edges { top: px(0.).into(), left: px(0.).into(), ..Edges::auto() };
+        let style = Style { position: Position::Absolute, display: Display::Flex, inset, ..Style::default() };
         (window.request_layout(style, ids.iter().copied(), cx), ids)
     }
 
